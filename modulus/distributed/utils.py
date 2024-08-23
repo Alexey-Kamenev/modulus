@@ -732,6 +732,7 @@ def mark_module_as_shared(
         # "Note that, unlike other autograd hooks, this hook operates on the tensor that requires grad
         #  and not the grad itself. The hook can in-place modify and access its Tensor argument,
         # including its .grad field."
+        print(f"{param.shape}, {DistributedManager().rank}")
         param.grad = _reduce(param.grad, group=group, use_fp32=use_fp32_reduction)
 
     for name, param in module.named_parameters(recurse=recurse):

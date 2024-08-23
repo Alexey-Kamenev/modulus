@@ -55,6 +55,9 @@ train:
     num_workers: 1
     pin_memory: true
     drop_last: true
+  dist_mgn:
+    enabled: false
+    proc_group_name: graph_partition
 
 val:
   batch_size: 1

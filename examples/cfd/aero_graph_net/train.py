@@ -29,10 +29,12 @@ from omegaconf import DictConfig, OmegaConf
 
 import torch
 from torch import Tensor
+import torch.distributed
 from torch.nn.parallel import DistributedDataParallel
 
-from modulus.distributed.manager import DistributedManager
+from modulus.distributed import DistributedManager, mark_module_as_shared
 from modulus.launch.utils import load_checkpoint, save_checkpoint
+from modulus.models.gnn_layers import CuGraphCSC, partition_graph_nodewise
 
 from loggers import CompositeLogger, ExperimentLogger, init_python_logging
 from utils import batch_as_dict
@@ -49,6 +51,7 @@ class MGNTrainer:
         assert DistributedManager.is_initialized()
         self.dist = DistributedManager()
 
+        self.cfg = cfg
         # instantiate training dataset
         logger.info("Loading the training dataset...")
         self.dataset = instantiate(cfg.data.train)
@@ -64,7 +67,7 @@ class MGNTrainer:
         self.dataloader = GraphDataLoader(
             self.dataset,
             **cfg.train.dataloader,
-            use_ddp=self.dist.world_size > 1,
+            # use_ddp=self.dist.world_size > 1,
         )
 
         # instantiate validation dataloader
@@ -83,21 +86,26 @@ class MGNTrainer:
             )
         else:
             self.model = self.model.to(self.dist.device)
+        if cfg.train.dist_mgn.enabled:
+            mark_module_as_shared(self.model, cfg.train.dist_mgn.proc_group_name)
 
         # distributed data parallel for multi-GPU/multi-node training
-        if self.dist.distributed:
-            self.model = DistributedDataParallel(
-                self.model,
-                device_ids=[self.dist.local_rank],
-                output_device=self.dist.device,
-                broadcast_buffers=self.dist.broadcast_buffers,
-                find_unused_parameters=self.dist.find_unused_parameters,
+        if False:
+            if self.dist.distributed:
+                self.model = DistributedDataParallel(
+                    self.model,
+                    device_ids=[self.dist.local_rank],
+                    output_device=self.dist.device,
+                    broadcast_buffers=self.dist.broadcast_buffers,
+                    find_unused_parameters=self.dist.find_unused_parameters,
+                )
+                print("DDP")
+            # Set the original model getter to simplify access.
+            assert not hasattr(self.model, "model")
+            type(self.model).model = (
+                (lambda m: m.module) if self.dist.distributed else (lambda m: m)
             )
-        # Set the original model getter to simplify access.
-        assert not hasattr(self.model, "model")
-        type(self.model).model = (
-            (lambda m: m.module) if self.dist.distributed else (lambda m: m)
-        )
+        type(self.model).model = lambda m: m
 
         # enable train mode
         self.model.train()
@@ -133,6 +141,7 @@ class MGNTrainer:
     def train(self, batch: Mapping[str, Tensor]):
         self.optimizer.zero_grad()
         losses = self.forward(batch)
+        torch.distributed.barrier()
         self.backward(losses["total"])
         self.scheduler.step()
         return losses
@@ -141,9 +150,50 @@ class MGNTrainer:
         # forward pass
         graph = batch["graph"]
         with self.autocast():
-            pred = batch_as_dict(self.model(graph.ndata["x"], graph.edata["x"], graph))
-            # Graph data (e.g. p and WSS) loss.
-            graph_loss = self.loss.graph(pred["graph"], graph.ndata["y"])
+            if False:
+                pred = batch_as_dict(self.model(graph.ndata["x"], graph.edata["x"], graph))
+                # Graph data (e.g. p and WSS) loss.
+                graph_loss = self.loss.graph(pred["graph"], graph.ndata["y"])
+            else:
+                batch = batch_as_dict(batch)
+                print(f"batch {self.dist.rank}")
+                graph = batch["graph"]
+                offsets, indices, edge_perm = graph.adj_tensors("csc")
+                graph_partition = partition_graph_nodewise(
+                    offsets.to(dtype=torch.int64),
+                    indices.to(dtype=torch.int64),
+                    self.dist.world_size,
+                    self.dist.rank,
+                    self.dist.device,
+                )
+                graph_multi_gpu = CuGraphCSC(
+                    offsets.to(self.dist.device),
+                    indices.to(self.dist.device),
+                    graph.num_src_nodes(),
+                    graph.num_dst_nodes(),
+                    partition_size=self.dist.world_size,
+                    partition_group_name=self.cfg.train.dist_mgn.proc_group_name,
+                    graph_partition=graph_partition,
+                )
+                nfeats = graph_multi_gpu.get_src_node_features_in_partition(
+                    graph.ndata["x"].to(self.dist.device)
+                )
+                print(f"{nfeats.shape=}, {graph.ndata['x'].shape=} {self.dist.rank}")
+
+                efeats = graph.edata["x"][edge_perm]
+                efeats = graph_multi_gpu.get_edge_features_in_partition(
+                    efeats.to(self.dist.device)
+                )
+                print(f"{efeats.shape=}, {efeats.shape=} {self.dist.rank}")
+
+                yfeats = graph_multi_gpu.get_dst_node_features_in_partition(
+                    graph.ndata["y"].to(self.dist.device)
+                )
+                print(f"{yfeats.shape=}, {graph.ndata['y'].shape=} {self.dist.rank}")
+
+                pred = batch_as_dict(self.model(nfeats, efeats, graph_multi_gpu))
+                # Graph data (e.g. p and WSS) loss.
+                graph_loss = self.loss.graph(pred["graph"], yfeats)
             losses = {"graph": graph_loss}
             # Compute C_d loss, if requested.
             if (pred_c_d := pred.get("c_d")) is not None:
@@ -159,9 +209,15 @@ class MGNTrainer:
     def backward(self, loss):
         # backward pass.
         # If AMP is disabled, the scaler will fall back to the default behavior.
+        # rank = DistributedManager().group_rank("graph_partition")
+        rank = self.dist.rank # DistributedManager().rank
+        print(f">backward {rank}")
         self.scaler.scale(loss).backward()
+        print(f">step {rank}")
         self.scaler.step(self.optimizer)
+        print(f">update {rank}")
         self.scaler.update()
+        print(f"<backward {rank}")
 
     @torch.no_grad()
     def validation(self, epoch: int):
@@ -199,6 +255,11 @@ def main(cfg: DictConfig) -> None:
     # initialize distributed manager
     DistributedManager.initialize()
     dist = DistributedManager()
+    if cfg.train.dist_mgn.enabled:
+        DistributedManager.create_process_subgroup(
+            name=cfg.train.dist_mgn.proc_group_name,
+            size=dist.world_size,
+        )
 
     init_python_logging(cfg, dist.rank)
     logger.info(f"Config summary:\n{OmegaConf.to_yaml(cfg, sort_keys=True)}")
@@ -238,22 +299,24 @@ def main(cfg: DictConfig) -> None:
 
         # validation
         # TODO(akamenev): redundant restriction, val should run on all ranks.
-        if dist.rank == 0:
-            trainer.validation(epoch)
+        if False:
+            if dist.rank == 0:
+                trainer.validation(epoch)
 
-        # save checkpoint
-        if dist.world_size > 1:
-            torch.distributed.barrier()
-        if dist.rank == 0 and epoch % cfg.train.checkpoint_save_freq == 0:
-            save_checkpoint(
-                cfg.output,
-                models=trainer.model.model(),
-                optimizer=trainer.optimizer,
-                scheduler=trainer.scheduler,
-                scaler=trainer.scaler,
-                epoch=epoch,
-            )
-            logger.info(f"Saved model on rank {dist.rank}")
+            # save checkpoint
+            if dist.world_size > 1:
+                torch.distributed.barrier()
+            if dist.rank == 0 and epoch % cfg.train.checkpoint_save_freq == 0:
+                save_checkpoint(
+                    cfg.output,
+                    models=trainer.model.model(),
+                    optimizer=trainer.optimizer,
+                    scheduler=trainer.scheduler,
+                    scaler=trainer.scaler,
+                    epoch=epoch,
+                )
+                logger.info(f"Saved model on rank {dist.rank}")
+        torch.distributed.barrier()
         start = time.time()
     logger.info("Training completed!")
 
