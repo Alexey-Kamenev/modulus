@@ -601,17 +601,21 @@ class AhmedBodyDataset(DGLDataset, Datapipe):
         if point_data is None:
             raise ValueError("Failed to get point data from the polydata.")
 
-        for i in range(point_data.GetNumberOfArrays()):
-            array = point_data.GetArray(i)
-            array_name = array.GetName()
-            if array_name in outvar_keys:
-                array_data = np.zeros(
-                    (points.GetNumberOfPoints(), array.GetNumberOfComponents())
-                )
-                for j in range(points.GetNumberOfPoints()):
-                    array.GetTuple(j, array_data[j])
+        if False:
+            for i in range(point_data.GetNumberOfArrays()):
+                array = point_data.GetArray(i)
+                array_name = array.GetName()
+                if array_name in outvar_keys:
+                    array_data = np.zeros(
+                        (points.GetNumberOfPoints(), array.GetNumberOfComponents())
+                    )
+                    for j in range(points.GetNumberOfPoints()):
+                        array.GetTuple(j, array_data[j])
 
-                # Assign node attributes to the DGL graph
-                graph.ndata[array_name] = torch.tensor(array_data, dtype=torch.float32)
+                    # Assign node attributes to the DGL graph
+                    graph.ndata[array_name] = torch.tensor(array_data, dtype=torch.float32)
+        else:
+            graph.ndata["p"] = torch.full((points.GetNumberOfPoints(), 1), 0.1)
+            graph.ndata["wallShearStress"] = torch.full((points.GetNumberOfPoints(), 3), 0.1)
 
         return graph

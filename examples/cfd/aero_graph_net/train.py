@@ -141,7 +141,6 @@ class MGNTrainer:
     def train(self, batch: Mapping[str, Tensor]):
         self.optimizer.zero_grad()
         losses = self.forward(batch)
-        torch.distributed.barrier()
         self.backward(losses["total"])
         self.scheduler.step()
         return losses
@@ -156,7 +155,6 @@ class MGNTrainer:
                 graph_loss = self.loss.graph(pred["graph"], graph.ndata["y"])
             else:
                 batch = batch_as_dict(batch)
-                print(f"batch {self.dist.rank}")
                 graph = batch["graph"]
                 offsets, indices, edge_perm = graph.adj_tensors("csc")
                 graph_partition = partition_graph_nodewise(
@@ -175,21 +173,16 @@ class MGNTrainer:
                     partition_group_name=self.cfg.train.dist_mgn.proc_group_name,
                     graph_partition=graph_partition,
                 )
-                nfeats = graph_multi_gpu.get_src_node_features_in_partition(
+                nfeats = graph_multi_gpu.get_dst_node_features_in_partition(
                     graph.ndata["x"].to(self.dist.device)
                 )
-                print(f"{nfeats.shape=}, {graph.ndata['x'].shape=} {self.dist.rank}")
-
                 efeats = graph.edata["x"][edge_perm]
                 efeats = graph_multi_gpu.get_edge_features_in_partition(
                     efeats.to(self.dist.device)
                 )
-                print(f"{efeats.shape=}, {efeats.shape=} {self.dist.rank}")
-
                 yfeats = graph_multi_gpu.get_dst_node_features_in_partition(
                     graph.ndata["y"].to(self.dist.device)
                 )
-                print(f"{yfeats.shape=}, {graph.ndata['y'].shape=} {self.dist.rank}")
 
                 pred = batch_as_dict(self.model(nfeats, efeats, graph_multi_gpu))
                 # Graph data (e.g. p and WSS) loss.
@@ -209,15 +202,9 @@ class MGNTrainer:
     def backward(self, loss):
         # backward pass.
         # If AMP is disabled, the scaler will fall back to the default behavior.
-        # rank = DistributedManager().group_rank("graph_partition")
-        rank = self.dist.rank # DistributedManager().rank
-        print(f">backward {rank}")
         self.scaler.scale(loss).backward()
-        print(f">step {rank}")
         self.scaler.step(self.optimizer)
-        print(f">update {rank}")
         self.scaler.update()
-        print(f"<backward {rank}")
 
     @torch.no_grad()
     def validation(self, epoch: int):
@@ -303,20 +290,21 @@ def main(cfg: DictConfig) -> None:
             if dist.rank == 0:
                 trainer.validation(epoch)
 
-            # save checkpoint
-            if dist.world_size > 1:
-                torch.distributed.barrier()
-            if dist.rank == 0 and epoch % cfg.train.checkpoint_save_freq == 0:
-                save_checkpoint(
-                    cfg.output,
-                    models=trainer.model.model(),
-                    optimizer=trainer.optimizer,
-                    scheduler=trainer.scheduler,
-                    scaler=trainer.scaler,
-                    epoch=epoch,
-                )
-                logger.info(f"Saved model on rank {dist.rank}")
-        torch.distributed.barrier()
+        # save checkpoint
+        if dist.world_size > 1:
+            torch.distributed.barrier()
+        if dist.rank == 0 and epoch % cfg.train.checkpoint_save_freq == 0:
+            save_checkpoint(
+                cfg.output,
+                models=trainer.model.model(),
+                optimizer=trainer.optimizer,
+                scheduler=trainer.scheduler,
+                scaler=trainer.scaler,
+                epoch=epoch,
+            )
+            logger.info(f"Saved model on rank {dist.rank}")
+        if dist.world_size > 1:
+            torch.distributed.barrier()
         start = time.time()
     logger.info("Training completed!")
 
