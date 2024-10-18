@@ -75,8 +75,15 @@ class DrivAerMLDataset(DGLDataset, Datapipe):
         The input node features to consider. Default includes 'pos'.
     outvar_keys: Iterable[str], optional
         The output features to consider. Default includes 'pMeanTrim' and 'wallShearStressMeanTrim'.
-    normalize_keys Iterable[str], optional
+    normalize_keys: Iterable[str], optional
         The features to normalize. Default includes 'pMeanTrim' and 'wallShearStressMeanTrim'.
+    decimate_pct: int, optional.
+        Which decimation ratio to use, default is 5%. Currently can be one of [5, 10, 20].
+    topology_preserving: bool.
+        Whether to use topology-preserving variant of data.
+    cache_dir: str, optional
+        Path to the cache directory to store graphs in DGL format for fast loading.
+        Default is ./dgl_cache/.
     force_reload: bool, optional
         If True, forces a reload of the data, by default False.
     name: str, optional
@@ -95,6 +102,7 @@ class DrivAerMLDataset(DGLDataset, Datapipe):
         normalize_keys: Iterable[str] = (P_KEY, WSS_KEY),
         decimate_pct: int = 5,
         topology_preserving: bool = False,
+        cache_dir: str | Path = "./dgl_cache/",
         force_reload: bool = False,
         name: str = "dataset",
         verbose: bool = False,
@@ -124,6 +132,12 @@ class DrivAerMLDataset(DGLDataset, Datapipe):
 
         self.decimate_pct = decimate_pct
         self.topology_preserving = topology_preserving
+
+        self.cache_dir: Path = (
+            self._get_cache_dir(self.data_dir, Path(cache_dir))
+            if cache_dir is not None
+            else None
+        )
 
         if self.num_samples > len(self.run_dirs):
             raise ValueError(
@@ -162,7 +176,22 @@ class DrivAerMLDataset(DGLDataset, Datapipe):
         run_dir = self.run_dirs.iloc[idx]
         run_name = run_dir.name
 
-        graph = self._create_dgl_graph(run_name)
+        if self.cache_dir is None:
+            # Caching is disabled - create the graph.
+            graph = self._create_dgl_graph(run_name)
+        else:
+            cached_graph_filename = self.cache_dir / (
+                f"{run_name}_{self._get_vtp_filename()}.bin"
+            )
+            if not self._force_reload and cached_graph_filename.is_file():
+                gs, _ = dgl.load_graphs(str(cached_graph_filename))
+                if len(gs) != 1:
+                    raise ValueError(f"Expected to load 1 graph but got {len(gs)}.")
+                graph = gs[0]
+            else:
+                graph = self._create_dgl_graph(run_name)
+                # self.cache_dir.mkdir(parents=True, exist_ok=True)
+                dgl.save_graphs(str(cached_graph_filename), [graph])
 
         # Set graph inputs/outputs.
         graph.ndata["x"] = torch.cat([graph.ndata[k] for k in self.input_keys], dim=-1)
@@ -172,6 +201,16 @@ class DrivAerMLDataset(DGLDataset, Datapipe):
             # "name": run_name,
             "graph": graph,
         }
+
+    @staticmethod
+    def _get_cache_dir(data_dir, cache_dir):
+        if not cache_dir.is_absolute():
+            cache_dir = data_dir / cache_dir
+        return cache_dir.resolve()
+
+    def _get_vtp_filename(self):
+        pro_str = "-pro" if self.topology_preserving else ""
+        return f"boundary_decimate{pro_str}_{self.decimate_pct}_vars.vtp"
 
     def _create_dgl_graph(
         self,
@@ -219,9 +258,7 @@ class DrivAerMLDataset(DGLDataset, Datapipe):
 
             return edge_list
 
-        pro_str = "-pro" if self.topology_preserving else ""
-        vtp_file = f"{name}/boundary_decimate{pro_str}_{self.decimate_pct}_vars.vtp"
-        mesh = pv.read(self.data_dir / vtp_file)
+        mesh = pv.read((self.data_dir / name) / self._get_vtp_filename())
         edge_list = extract_edges(mesh)
 
         # Create DGL graph using the connectivity information
