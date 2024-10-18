@@ -44,7 +44,7 @@ model:
   processor_size: 10
 
 train:
-  epochs: 50
+  epochs: 500
 
 visualizers:
   mesh_p:
