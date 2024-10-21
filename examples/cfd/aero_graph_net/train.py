@@ -31,8 +31,9 @@ import torch
 from torch import Tensor
 from torch.nn.parallel import DistributedDataParallel
 
-from modulus.distributed.manager import DistributedManager
+from modulus.distributed import DistributedManager, mark_module_as_shared
 from modulus.launch.utils import load_checkpoint, save_checkpoint
+from modulus.models.gnn_layers import CuGraphCSC, partition_graph_nodewise
 
 from loggers import CompositeLogger, ExperimentLogger, init_python_logging
 from utils import batch_as_dict
@@ -49,6 +50,8 @@ class MGNTrainer:
         assert DistributedManager.is_initialized()
         self.dist = DistributedManager()
 
+        self.cfg = cfg
+
         # instantiate training dataset
         logger.info("Loading the training dataset...")
         self.dataset = instantiate(cfg.data.train)
@@ -64,7 +67,7 @@ class MGNTrainer:
         self.dataloader = GraphDataLoader(
             self.dataset,
             **cfg.train.dataloader,
-            use_ddp=self.dist.world_size > 1,
+            use_ddp=self.dist.world_size > 1 and not cfg.train.dist_mgn.enabled,
         )
 
         # instantiate validation dataloader
@@ -84,20 +87,24 @@ class MGNTrainer:
         else:
             self.model = self.model.to(self.dist.device)
 
-        # distributed data parallel for multi-GPU/multi-node training
-        if self.dist.distributed:
-            self.model = DistributedDataParallel(
-                self.model,
-                device_ids=[self.dist.local_rank],
-                output_device=self.dist.device,
-                broadcast_buffers=self.dist.broadcast_buffers,
-                find_unused_parameters=self.dist.find_unused_parameters,
+        if not cfg.train.dist_mgn.enabled:
+            # distributed data parallel for multi-GPU/multi-node training
+            if self.dist.distributed:
+                self.model = DistributedDataParallel(
+                    self.model,
+                    device_ids=[self.dist.local_rank],
+                    output_device=self.dist.device,
+                    broadcast_buffers=self.dist.broadcast_buffers,
+                    find_unused_parameters=self.dist.find_unused_parameters,
+                )
+            # Set the original model getter to simplify access.
+            assert not hasattr(self.model, "model")
+            type(self.model).model = (
+                (lambda m: m.module) if self.dist.distributed else (lambda m: m)
             )
-        # Set the original model getter to simplify access.
-        assert not hasattr(self.model, "model")
-        type(self.model).model = (
-            (lambda m: m.module) if self.dist.distributed else (lambda m: m)
-        )
+        else:
+            mark_module_as_shared(self.model, cfg.train.dist_mgn.proc_group_name)
+            type(self.model).model = lambda m: m
 
         # enable train mode
         self.model.train()
@@ -142,11 +149,45 @@ class MGNTrainer:
         batch = dict(batch)
         graph = batch.pop("graph")
         with self.autocast():
-            pred = batch_as_dict(
-                self.model(graph.ndata["x"], graph.edata["x"], graph, **batch)
-            )
-            # Graph data (e.g. p and WSS) loss.
-            graph_loss = self.loss.graph(pred["graph"], graph.ndata["y"])
+            if not self.cfg.train.dist_mgn.enabled:
+                pred = batch_as_dict(
+                    self.model(graph.ndata["x"], graph.edata["x"], graph, **batch)
+                )
+                # Graph data (e.g. p and WSS) loss.
+                graph_loss = self.loss.graph(pred["graph"], graph.ndata["y"])
+            else:
+                offsets, indices, edge_perm = graph.adj_tensors("csc")
+                graph_partition = partition_graph_nodewise(
+                    offsets.to(dtype=torch.int64),
+                    indices.to(dtype=torch.int64),
+                    self.dist.world_size,
+                    self.dist.rank,
+                    self.dist.device,
+                )
+                graph_multi_gpu = CuGraphCSC(
+                    offsets.to(self.dist.device),
+                    indices.to(self.dist.device),
+                    graph.num_src_nodes(),
+                    graph.num_dst_nodes(),
+                    partition_size=self.dist.world_size,
+                    partition_group_name=self.cfg.train.dist_mgn.proc_group_name,
+                    graph_partition=graph_partition,
+                )
+                nfeats = graph_multi_gpu.get_dst_node_features_in_partition(
+                    graph.ndata["x"].to(self.dist.device)
+                )
+                efeats = graph.edata["x"][edge_perm]
+                efeats = graph_multi_gpu.get_edge_features_in_partition(
+                    efeats.to(self.dist.device)
+                )
+                yfeats = graph_multi_gpu.get_dst_node_features_in_partition(
+                    graph.ndata["y"].to(self.dist.device)
+                )
+
+                pred = batch_as_dict(self.model(nfeats, efeats, graph_multi_gpu))
+                # Graph data (e.g. p and WSS) loss.
+                graph_loss = self.loss.graph(pred["graph"], yfeats)
+
             losses = {"graph": graph_loss}
             # Compute C_d loss, if requested.
             if (pred_c_d := pred.get("c_d")) is not None:
@@ -206,6 +247,17 @@ def main(cfg: DictConfig) -> None:
     dist = DistributedManager()
 
     init_python_logging(cfg, dist.rank)
+
+    if cfg.train.dist_mgn.enabled:
+        DistributedManager.create_process_subgroup(
+            name=cfg.train.dist_mgn.proc_group_name,
+            size=dist.world_size,
+        )
+        cfg.train.dataloader.shuffle = False
+        logger.warning(
+            "Disabling train dataloader shuffling to avoid graph splitting mismatch."
+        )
+
     logger.info(f"Config summary:\n{OmegaConf.to_yaml(cfg, sort_keys=True)}")
 
     torch.set_float32_matmul_precision("high")

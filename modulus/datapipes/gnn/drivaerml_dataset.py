@@ -21,7 +21,6 @@ from typing import Iterable
 import dgl
 import pandas as pd
 import torch
-import yaml
 from dgl.data import DGLDataset
 from torch import Tensor
 
@@ -153,7 +152,7 @@ class DrivAerMLDataset(DGLDataset, Datapipe):
             for k, v in {
                 P_KEY: (-180.986, 227.377),
                 WSS_KEY: (
-                    torch.tensor([-0.9298492 , -0.00185992, -0.03872167]),
+                    torch.tensor([-0.9298492, -0.00185992, -0.03872167]),
                     torch.tensor([1.5299146, 0.9425125, 1.1832976]),
                 ),
             }.items()
