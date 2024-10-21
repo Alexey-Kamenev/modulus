@@ -212,6 +212,7 @@ The following license is provided from their source,
    limitations under the License.
 """
 
+from collections.abc import Mapping
 from enum import Enum
 from pathlib import Path
 from typing import Optional
@@ -255,6 +256,8 @@ class BistrideMultiLayerGraphDataset(Dataset):
 
     def __getitem__(self, idx):
         graph = self.dataset[idx]
+        if isinstance(graph, Mapping):
+            graph = graph["graph"]
         # Check if MS graph is already in the cache.
         edges_and_ids = None
         if self.cache_dir is not None:
