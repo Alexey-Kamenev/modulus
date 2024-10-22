@@ -33,10 +33,9 @@ from torch.nn.parallel import DistributedDataParallel
 
 from modulus.distributed import DistributedManager, mark_module_as_shared
 from modulus.launch.utils import load_checkpoint, save_checkpoint
-from modulus.models.gnn_layers import CuGraphCSC, partition_graph_nodewise
 
 from loggers import CompositeLogger, ExperimentLogger, init_python_logging
-from utils import batch_as_dict
+from utils import batch_as_dict, partition_graph
 
 
 logger = logging.getLogger("agnet")
@@ -150,44 +149,18 @@ class MGNTrainer:
         graph = batch.pop("graph")
         with self.autocast():
             if not self.cfg.train.dist_mgn.enabled:
-                pred = batch_as_dict(
-                    self.model(graph.ndata["x"], graph.edata["x"], graph, **batch)
-                )
-                # Graph data (e.g. p and WSS) loss.
-                graph_loss = self.loss.graph(pred["graph"], graph.ndata["y"])
+                node_feats = graph.ndata["x"]
+                edge_feats = graph.edata["x"]
+                y = graph.ndata["y"]
             else:
-                offsets, indices, edge_perm = graph.adj_tensors("csc")
-                graph_partition = partition_graph_nodewise(
-                    offsets.to(dtype=torch.int64),
-                    indices.to(dtype=torch.int64),
-                    self.dist.world_size,
-                    self.dist.rank,
-                    self.dist.device,
+                graph, node_feats, edge_feats, y = partition_graph(
+                    graph,
+                    self.cfg.train.dist_mgn.partition_type,
+                    self.cfg.train.dist_mgn.proc_group_name,
                 )
-                graph_multi_gpu = CuGraphCSC(
-                    offsets.to(self.dist.device),
-                    indices.to(self.dist.device),
-                    graph.num_src_nodes(),
-                    graph.num_dst_nodes(),
-                    partition_size=self.dist.world_size,
-                    partition_group_name=self.cfg.train.dist_mgn.proc_group_name,
-                    graph_partition=graph_partition,
-                )
-                nfeats = graph_multi_gpu.get_dst_node_features_in_partition(
-                    graph.ndata["x"].to(self.dist.device)
-                )
-                efeats = graph.edata["x"][edge_perm]
-                efeats = graph_multi_gpu.get_edge_features_in_partition(
-                    efeats.to(self.dist.device)
-                )
-                yfeats = graph_multi_gpu.get_dst_node_features_in_partition(
-                    graph.ndata["y"].to(self.dist.device)
-                )
-
-                pred = batch_as_dict(self.model(nfeats, efeats, graph_multi_gpu))
-                # Graph data (e.g. p and WSS) loss.
-                graph_loss = self.loss.graph(pred["graph"], yfeats)
-
+            pred = batch_as_dict(self.model(node_feats, edge_feats, graph, **batch))
+            # Graph data (e.g. p and WSS) loss.
+            graph_loss = self.loss.graph(pred["graph"], y)
             losses = {"graph": graph_loss}
             # Compute C_d loss, if requested.
             if (pred_c_d := pred.get("c_d")) is not None:

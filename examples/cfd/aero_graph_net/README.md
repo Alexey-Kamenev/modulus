@@ -18,6 +18,7 @@ the drag coefficient.
     1. [Ahmed Body](#ahmed-body-training)
         1. [BSMS MGN](#bsms-mgn-training)
     2. [DrivAerNet](#drivaer-training)
+    3. [Graph-partitioned MGN](#graph-partitioned-mgn)
 5. [Inference](#inference)
 
 ## Problem overview
@@ -246,6 +247,35 @@ To use AGN instead of MGN, use `drivaernet/agn` experiment
 ```bash
 python train.py +experiment=drivaernet/agn data.data_dir=/data/DrivAerNet/
 ```
+
+### Graph-partitioned MGN
+
+In some cases, the input graph can be large enough so the resulting model
+won't fit into GPU memory. In this case, graph-partitioning feature can be used
+to partition the graph across multiple GPUs. Note that this is different from
+distributed model approach where parts of the model are assigned to different GPUs.
+In case of graph partitioning, each GPU has the same model which processes a subset
+of a global graph.
+
+To enable graph partitioning, add `train.dist_mgn.enabled=true` to the command line.
+You can also change graph partitioning type by setting `train.dist_mgn.partition_type`
+to `nodewise` or `coordinate_bbox`. `coordinate_bbox` partitioning type implements
+a simple partitioning of 3D-box along its `x` coordinate and can be used with
+some of the aerodynamics datasets.
+
+For example, to partition the graph across 2 GPUs, run the following command:
+
+```bash
+torchrun --nproc_per_node=2 train.py +experiment=ahmed/mgn \
+    data.data_dir=/data/dataset \
+    train.dist_mgn.enabled=true \
+    train.dist_mgn.partition_type=nodewise
+```
+
+Known limitations:
+
+1. Graph partitioning currently does not support DDP, so it will be disabled.
+2. Partitioning functions performance will be improved in the future.
 
 ## Inference
 

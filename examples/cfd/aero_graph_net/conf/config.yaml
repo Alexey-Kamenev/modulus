@@ -58,6 +58,7 @@ train:
   dist_mgn:
     enabled: false
     proc_group_name: graph_partition
+    partition_type: nodewise  # can be nodewise or coordinate_bbox.
 
 val:
   batch_size: 1
