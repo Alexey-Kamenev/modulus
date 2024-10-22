@@ -98,3 +98,4 @@ loggers:
     group:
     mode: disabled
     dir: ${output}
+    resume_dir: ${resume_dir}

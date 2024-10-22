@@ -18,11 +18,13 @@
 from abc import ABC, abstractmethod
 import functools
 import logging
+from pathlib import Path
 
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 
 import wandb
+import wandb.util
 
 from modulus.distributed import DistributedManager
 
@@ -74,7 +76,22 @@ class WandBLogger(ExperimentLogger):
     def __init__(self, **kwargs) -> None:
         if DistributedManager().rank != 0:
             return
-        wandb.init(**kwargs)
+
+        # Read W&B experiment id either from resume or output dir.
+        wandb_id = None
+        output_dir = Path(kwargs["dir"])
+        resume_dir = Path(kwargs.pop("resume_dir", output_dir))
+        wandb_id_file = resume_dir / "wandb_id.txt"
+        if wandb_id_file.is_file():
+            with open(wandb_id_file, encoding="utf-8") as f:
+                wandb_id = f.read()
+        else:
+            wandb_id = wandb.util.generate_id()
+        # Save W&B experiment id for future resume.
+        with open(output_dir / "wandb_id.txt", "w", encoding="utf-8") as f:
+            f.write(wandb_id)
+
+        wandb.init(**kwargs, id=wandb_id, resume="allow")
 
     @rank0
     def log_scalar(self, tag: str, value: float, step: int) -> None:
