@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added gradient clipping to StaticCapture utilities.
 - Bistride Multiscale MeshGraphNet example.
 - FIGConvUNet model and example.
+- The Transolver model.
 - Graph-partitioning feature in AeroGraphNet example.
 
 ### Changed
@@ -24,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Refactored CorrDiff training recipe for improved usability
 - Fixed timezone calculation in datapipe cosine zenith utility.
 - Refactored EDMPrecondSRV2 preconditioner and fixed the bug related to the metadata
+- Extended the checkpointing utility to store metadata.
 
 ### Deprecated
 
