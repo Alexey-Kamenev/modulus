@@ -15,5 +15,5 @@
 # limitations under the License.
 
 _target_: torch.optim.lr_scheduler.CosineAnnealingLR
-T_max: 30000
+T_max: 27000
 eta_min: 0.000003
