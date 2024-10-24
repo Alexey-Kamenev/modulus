@@ -30,4 +30,4 @@ dataset:
   num_samples: ${..num_samples}
 
 num_layers: 2
-cache_dir: ${.dataset.data_dir}/bsms_cache
+cache_dir: ${.dataset.data_dir}/bsms_cache_l${.num_layers}
