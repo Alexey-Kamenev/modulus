@@ -274,6 +274,7 @@ class BistrideMultiLayerGraphDataset(Dataset):
             "graph": graph,
             "ms_edges": [torch.tensor(e, dtype=torch.long) for e in ms_edges],
             "ms_ids": [torch.tensor(ids, dtype=torch.long) for ids in ms_ids],
+            "node_pos": graph.ndata["pos"],
         }
 
     def __len__(self):

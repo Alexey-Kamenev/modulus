@@ -14,12 +14,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+
 import dgl
 import pytest
 import torch
 from models.common import validate_forward_accuracy
 from pytest_utils import import_or_fail
 
+from modulus.distributed import DistributedManager
+from modulus.models.gnn_layers import CuGraphCSC, partition_graph_nodewise
 from modulus.models.meshgraphnet.bsms_mgn import BiStrideMeshGraphNet
 
 
@@ -128,3 +132,87 @@ def test_bsms_mgn_ahmed(pytestconfig, ahmed_data_dir):
 
     # Check output shape.
     assert pred.shape == (g0.num_nodes(), output_dim)
+
+
+def distributed_setup(rank, model_parallel_size, pg_name):
+    os.environ["RANK"] = f"{rank}"
+    os.environ["WORLD_SIZE"] = f"{model_parallel_size}"
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = str(12355)
+    DistributedManager._shared_state = {}
+
+    DistributedManager.initialize()
+
+    DistributedManager.create_process_subgroup(
+        name=pg_name,
+        size=model_parallel_size,
+    )
+
+
+def run_bsms_partitioning(rank, model_parallel_size):
+    from modulus.datapipes.gnn.bsms import BistrideMultiLayerGraphDataset
+
+    torch.manual_seed(1)
+
+    pg_name = "graph_partition"
+    distributed_setup(rank, model_parallel_size, pg_name)
+
+    device = torch.device("cuda:0")
+
+    # Create a simple graph.
+    num_nodes = 8
+    edges = (
+        torch.arange(num_nodes - 1),
+        torch.arange(num_nodes - 1) + 1,
+    )
+    pos = torch.randn((num_nodes, 3))
+
+    graph = dgl.graph(edges)
+    graph = dgl.to_bidirected(graph)
+
+    num_layers = 2
+    input_dim_nodes = 10
+    input_dim_edges = 4
+
+    graph.ndata["pos"] = pos
+    graph.ndata["x"] = torch.randn(num_nodes, input_dim_nodes)
+    graph.edata["x"] = torch.randn(graph.num_edges(), input_dim_edges)
+
+    offsets, indices, edge_perm = graph.adj_tensors("csc")
+
+    partition0 = partition_graph_nodewise(
+        offsets.to(dtype=torch.int64),
+        indices.to(dtype=torch.int64),
+        model_parallel_size,
+        rank,
+        device,
+    )
+
+    graph_multi_gpu = CuGraphCSC(
+        offsets.to(device),
+        indices.to(device),
+        graph.num_src_nodes(),
+        graph.num_dst_nodes(),
+        partition_size=model_parallel_size,
+        partition_group_name=pg_name,
+        graph_partition=partition0,
+    )
+
+    dataset = BistrideMultiLayerGraphDataset(
+        [graph_multi_gpu.to_dgl_graph()],
+        num_layers,
+    )
+
+    pass
+
+
+def test_partitioned_bsms():
+    model_parallel_size = 1
+
+    torch.multiprocessing.set_start_method("spawn", force=True)
+
+    torch.multiprocessing.spawn(
+        run_bsms_partitioning,
+        args=(model_parallel_size,),
+        nprocs=model_parallel_size,
+    )

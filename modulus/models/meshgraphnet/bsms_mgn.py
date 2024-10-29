@@ -15,7 +15,7 @@
 # limitations under the License.
 
 from dataclasses import dataclass
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Optional, Union
 
 from dgl import DGLGraph
 from torch import Tensor
@@ -149,16 +149,20 @@ class BiStrideMeshGraphNet(MeshGraphNet):
         self,
         node_features: Tensor,
         edge_features: Tensor,
-        graph: DGLGraph,
+        graph: Union[DGLGraph, "CuGraphCSC"],
         ms_edges: Iterable[Tensor] = (),
         ms_ids: Iterable[Tensor] = (),
+        node_pos: Tensor = None,
         **kwargs,
     ) -> Tensor:
         edge_features = self.edge_encoder(edge_features)
         node_features = self.node_encoder(node_features)
         x = self.processor(node_features, edge_features, graph)
 
-        node_pos = graph.ndata["pos"]
+        # Remove batch dim since BSMS supports only batch size 1.
+        if node_pos.shape[0] != 1:
+            raise ValueError(f"Batch size must be 1, got {node_pos.shape=}")
+        node_pos = node_pos.squeeze(0)
         ms_edges = [es.to(node_pos.device).squeeze(0) for es in ms_edges]
         ms_ids = [ids.squeeze(0) for ids in ms_ids]
         for _ in range(self.bistride_unet_levels):
