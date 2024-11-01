@@ -180,7 +180,7 @@ class DrivAerMLDataset(DGLDataset, Datapipe):
             graph = self._create_dgl_graph(run_name)
         else:
             cached_graph_filename = self.cache_dir / (
-                f"{run_name}_{self._get_vtp_filename()}.bin"
+                f"{run_name}_{self._get_vtp_filename(run_name)}.bin"
             )
             if not self._force_reload and cached_graph_filename.is_file():
                 gs, _ = dgl.load_graphs(str(cached_graph_filename))
@@ -197,7 +197,7 @@ class DrivAerMLDataset(DGLDataset, Datapipe):
         graph.ndata["y"] = torch.cat([graph.ndata[k] for k in self.output_keys], dim=-1)
 
         return {
-            # "name": run_name,
+            "name": run_name,
             "graph": graph,
         }
 
@@ -207,7 +207,10 @@ class DrivAerMLDataset(DGLDataset, Datapipe):
             cache_dir = data_dir / cache_dir
         return cache_dir.resolve()
 
-    def _get_vtp_filename(self):
+    def _get_vtp_filename(self, run_name: str):
+        if self.decimate_pct == 100:
+            return f"boundary_{run_name.removeprefix('run_')}.vtp"
+
         pro_str = "-pro" if self.topology_preserving else ""
         return f"boundary_decimate{pro_str}_{self.decimate_pct}_vars.vtp"
 
@@ -257,7 +260,7 @@ class DrivAerMLDataset(DGLDataset, Datapipe):
 
             return edge_list
 
-        mesh = pv.read((self.data_dir / name) / self._get_vtp_filename())
+        mesh = pv.read((self.data_dir / name) / self._get_vtp_filename(name))
         edge_list = extract_edges(mesh)
 
         # Create DGL graph using the connectivity information

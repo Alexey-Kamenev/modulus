@@ -16,6 +16,7 @@
 
 import logging
 from pathlib import Path
+from typing import Mapping, Sequence
 
 from dgl import DGLGraph
 from dgl.dataloading import GraphDataLoader
@@ -98,6 +99,9 @@ class EvalRollout:
             self.dataset,
             **cfg.test.dataloader,
         )
+        assert (
+            self.dataloader.batch_size == 1
+        ), "Only batch size 1 is currently supported."
 
         # instantiate the model
         logger.info("Creating the model...")
@@ -132,18 +136,28 @@ class EvalRollout:
         None
         """
 
+        total_error = 0.0
         for batch in self.dataloader:
-            graph, case_id, normals, areas, coeff = batch
-            assert len(case_id) == 1, "Only batch size 1 is currently supported."
+            if isinstance(batch, Mapping):
+                graph = batch["graph"]
+                name = batch["name"][0]
+                normals = batch.get("normals")
+                areas = batch.get("areas")
+                coeff = batch.get("coeff")
+            elif isinstance(batch, Sequence):
+                graph, name, normals, areas, coeff = batch
+                name = str(name[0].item())
+            else:
+                assert False, f"Unsupported type {type(batch)}"
 
-            case_id = case_id[0].item()
             graph = graph.to(self.device)
-            normals = normals.to(self.device)[0]
-            areas = areas.to(self.device)[0]
-            coeff = coeff.to(self.device)[0]
+            normals = normals.to(self.device)[0] if normals is not None else None
+            areas = areas.to(self.device)[0] if areas is not None else None
+            coeff = coeff.to(self.device)[0] if coeff is not None else None
 
-            logger.info(f"Processing case id {case_id}")
+            logger.info(f"Processing {name}")
             pred = self.model(graph.ndata["x"], graph.edata["x"], graph)
+            pred = pred["graph"] if isinstance(pred, Mapping) else pred
             gt = graph.ndata["y"]
             pred, gt = self.dataset.denormalize(pred, gt, pred.device)
 
@@ -157,11 +171,14 @@ class EvalRollout:
 
             error = self.loss.graph(pred, gt)
             logger.info(f"Error (%): {error * 100:.4f}")
+            total_error += error
 
             if save_results:
                 # Convert DGL graph to PyVista graph and save it
                 pv_graph = dgl_to_pyvista(graph.cpu())
-                pv_graph.save(self.output_dir / f"{case_id}.vtp")
+                pv_graph.save(self.output_dir / f"{name}.vtp")
+        n = len(self.dataloader.dataset)
+        logger.info(f"Average error (%): {total_error / n * 100:.4f}")
 
 
 @hydra.main(version_base="1.3", config_path="conf", config_name="config")
@@ -173,7 +190,7 @@ def main(cfg: DictConfig) -> None:
 
     logger.info("Rollout started...")
     rollout = EvalRollout(cfg)
-    rollout.predict(save_results=True)
+    rollout.predict(cfg.inference.save_results)
 
 
 if __name__ == "__main__":

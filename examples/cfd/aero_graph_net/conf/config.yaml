@@ -99,3 +99,6 @@ loggers:
     mode: disabled
     dir: ${output}
     resume_dir: ${resume_dir}
+
+inference:
+  save_results: true
