@@ -104,7 +104,7 @@ Benchmark datapipes
     :members:
     :show-inheritance:
 
-The Darcy2DDataPipe provides data loading and preprocessing utilities for 2D Darcy
+The Darcy2D provides data loading and preprocessing utilities for 2D Darcy
 flow simulations. It handles permeability fields and pressure solutions, supporting
 various boundary conditions and mesh resolutions.
 
@@ -112,7 +112,7 @@ various boundary conditions and mesh resolutions.
     :members:
     :show-inheritance:
 
-The KelvinHelmholtzDataPipe manages data for Kelvin-Helmholtz instability simulations,
+The KelvinHelmholtz2D manages data for Kelvin-Helmholtz instability simulations,
 including velocity fields and density distributions. It supports both 2D and 3D simulation
 data with various initial conditions.
 
@@ -137,14 +137,14 @@ various climate datasets and variables with standardized preprocessing and norma
     :members:
     :show-inheritance:
 
-The SyntheticClimateDataPipe generates synthetic climate data for testing and development
+The SyntheticWeatherDataset generates synthetic climate data for testing and development
 purposes, supporting various climate patterns and noise models.
 
 .. automodule:: physicsnemo.datapipes.healpix.timeseries_dataset
     :members:
     :show-inheritance:
 
-The HEALPixTimeSeriesDataset handles spherical harmonic data in HEALPix format,
+The TimeSeriesDataset handles spherical harmonic data in HEALPix format,
 supporting time series analysis of global climate variables.
 
 Graph datapipes
