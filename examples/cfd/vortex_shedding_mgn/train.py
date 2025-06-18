@@ -21,11 +21,11 @@ from hydra.utils import to_absolute_path
 import torch
 import wandb
 
-from dgl.dataloading import GraphDataLoader
-
 from omegaconf import DictConfig
 
-from torch.cuda.amp import GradScaler, autocast
+from torch_geometric.data import DataLoader
+
+from torch.amp import GradScaler, autocast
 from torch.nn.parallel import DistributedDataParallel
 
 from physicsnemo.datapipes.gnn.vortex_shedding_dataset import VortexSheddingDataset
@@ -63,13 +63,14 @@ class MGNTrainer:
         )
 
         # instantiate dataloader
-        self.dataloader = GraphDataLoader(
+        self.dataloader = DataLoader(
             dataset,
             batch_size=cfg.batch_size,
             shuffle=True,
             drop_last=True,
             pin_memory=True,
-            use_ddp=self.dist.world_size > 1,
+            # TODO(akamenev): fix for DDP - add DistributedSampler.
+            # use_ddp=self.dist.world_size > 1,
             num_workers=cfg.num_dataloader_workers,
         )
 
@@ -150,9 +151,9 @@ class MGNTrainer:
 
     def forward(self, graph):
         # forward pass
-        with autocast(enabled=self.amp):
-            pred = self.model(graph.ndata["x"], graph.edata["x"], graph)
-            loss = self.criterion(pred, graph.ndata["y"])
+        with autocast(device_type=self.dist.device.type, enabled=self.amp):
+            pred = self.model(graph.x, graph.edge_attr, graph)
+            loss = self.criterion(pred, graph.y)
             return loss
 
     def backward(self, loss):
