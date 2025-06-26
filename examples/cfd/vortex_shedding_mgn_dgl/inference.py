@@ -29,7 +29,7 @@ from omegaconf import DictConfig
 import torch
 
 from physicsnemo.models.meshgraphnet import MeshGraphNet
-from physicsnemo.datapipes.gnn.vortex_shedding_dataset import VortexSheddingDataset
+from physicsnemo.datapipes.gnn.vortex_shedding_dataset_dgl import VortexSheddingDataset
 from physicsnemo.launch.logging import PythonLogger
 from physicsnemo.launch.utils import load_checkpoint
 

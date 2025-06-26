@@ -344,12 +344,16 @@ def sum_efeat(
                     sum_efeat = update_efeat_bipartite_e2e(
                         efeat, nfeat, static_graph, mode="sum"
                     )
-
-        else:
+        elif isinstance(graph, DGLGraph):
             src_feat, dst_feat = nfeat, nfeat
             src, dst = (item.long() for item in graph.edges())
             sum_efeat = sum_efeat_dgl(efeat, src_feat, dst_feat, src, dst)
-
+        elif isinstance(graph, PyGData):
+            src_feat, dst_feat = nfeat, nfeat
+            src, dst = graph.edge_index.long()
+            sum_efeat = sum_efeat_dgl(efeat, src_feat, dst_feat, src, dst)
+        else:
+            raise ValueError(f"Unsupported graph type: {type(graph)}")
     else:
         src_feat, dst_feat = nfeat
         if isinstance(graph, CuGraphCSC):
@@ -368,9 +372,14 @@ def sum_efeat(
                 sum_efeat = update_efeat_bipartite_e2e(
                     efeat, src_feat, dst_feat, bipartite_graph, mode="sum"
                 )
-        else:
+        elif isinstance(graph, DGLGraph):
             src, dst = (item.long() for item in graph.edges())
             sum_efeat = sum_efeat_dgl(efeat, src_feat, dst_feat, src, dst)
+        elif isinstance(graph, PyGData):
+            src, dst = graph.edge_index.long()
+            sum_efeat = sum_efeat_dgl(efeat, src_feat, dst_feat, src, dst)
+        else:
+            raise ValueError(f"Unsupported graph type: {type(graph)}")
 
     return sum_efeat
 

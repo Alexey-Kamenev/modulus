@@ -23,10 +23,11 @@ import wandb
 
 from omegaconf import DictConfig
 
-from torch_geometric.data import DataLoader
+from torch_geometric.loader import DataLoader
 
 from torch.amp import GradScaler, autocast
 from torch.nn.parallel import DistributedDataParallel
+from torch.utils.data.distributed import DistributedSampler
 
 from physicsnemo.datapipes.gnn.vortex_shedding_dataset import VortexSheddingDataset
 from physicsnemo.distributed.manager import DistributedManager
@@ -62,11 +63,19 @@ class MGNTrainer:
             num_steps=cfg.num_training_time_steps,
         )
 
+        sampler = DistributedSampler(
+            dataset,
+            shuffle=True,
+            num_replicas=self.dist.world_size,
+            rank=self.dist.rank,
+        )
+
         # instantiate dataloader
         self.dataloader = DataLoader(
             dataset,
             batch_size=cfg.batch_size,
-            shuffle=True,
+            shuffle=False,
+            sampler=sampler,
             drop_last=True,
             pin_memory=True,
             # TODO(akamenev): fix for DDP - add DistributedSampler.
@@ -189,6 +198,8 @@ def main(cfg: DictConfig) -> None:
     start = time.time()
     rank_zero_logger.info("Training started...")
     for epoch in range(trainer.epoch_init, cfg.epochs):
+        trainer.dataloader.sampler.set_epoch(epoch)
+
         for graph in trainer.dataloader:
             loss = trainer.train(graph)
         rank_zero_logger.info(

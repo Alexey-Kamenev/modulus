@@ -299,3 +299,296 @@ def test_mesh_node_block_batched_equivalence(device, pytestconfig):
     assert nfeat_dgl.shape == (total_nodes, output_dim)
     assert efeat_pyg.shape == (total_edges, input_dim_edges)
     assert nfeat_pyg.shape == (total_nodes, output_dim)
+
+
+@import_or_fail(["dgl", "torch_geometric"])
+@pytest.mark.parametrize("device", ["cuda:0", "cpu"])
+def test_mesh_edge_block_dgl_pyg_equivalence(device, pytestconfig):
+    """Test that MeshEdgeBlock produces equivalent outputs for DGL and PyG inputs."""
+    # (DGL2PYG): remove this once DGL is removed.
+
+    import dgl
+    from torch_geometric.data import Data as PyGData
+
+    from physicsnemo.models.gnn_layers.mesh_edge_block import MeshEdgeBlock
+
+    # Test parameters.
+    num_nodes = 10
+    num_edges = 20
+    input_dim_nodes = 8
+    input_dim_edges = 8
+    output_dim = 8
+    hidden_dim = 10
+
+    # Create MeshEdgeBlock.
+    edge_block = MeshEdgeBlock(
+        input_dim_nodes=input_dim_nodes,
+        input_dim_edges=input_dim_edges,
+        output_dim=output_dim,
+        hidden_dim=hidden_dim,
+        hidden_layers=1,
+        activation_fn=torch.nn.SiLU(),
+    ).to(device)
+
+    # Create random graph data.
+    torch.manual_seed(42)
+    node_features = torch.randn(num_nodes, input_dim_nodes, device=device)
+    edge_features = torch.randn(num_edges, input_dim_edges, device=device)
+    edge_index = torch.randint(0, num_nodes, (2, num_edges), device=device)
+
+    # Create DGL graph.
+    dgl_graph = dgl.graph((edge_index[0], edge_index[1]), num_nodes=num_nodes)
+    dgl_graph = dgl_graph.to(device)
+
+    # Create PyG graph.
+    pyg_graph = PyGData(edge_index=edge_index, num_nodes=num_nodes)
+
+    # Forward pass through DGL.
+    efeat_dgl, nfeat_dgl = edge_block(edge_features, node_features, dgl_graph)
+
+    # Forward pass through PyG.
+    efeat_pyg, nfeat_pyg = edge_block(edge_features, node_features, pyg_graph)
+
+    # Verify outputs are equivalent.
+    assert_close(efeat_dgl, efeat_pyg)
+    assert_close(nfeat_dgl, nfeat_pyg)
+
+    # Verify output shapes.
+    assert efeat_dgl.shape == (num_edges, output_dim)
+    assert nfeat_dgl.shape == (num_nodes, input_dim_nodes)
+
+
+@import_or_fail(["dgl", "torch_geometric"])
+@pytest.mark.parametrize("device", ["cuda:0", "cpu"])
+def test_mesh_edge_block_gradient_equivalence(device, pytestconfig):
+    """Test that gradients are equivalent between DGL and PyG versions of MeshEdgeBlock."""
+    # (DGL2PYG): remove this once DGL is removed.
+
+    import dgl
+    from torch_geometric.data import Data as PyGData
+
+    from physicsnemo.models.gnn_layers.mesh_edge_block import MeshEdgeBlock
+
+    # Test parameters.
+    num_nodes = 8
+    num_edges = 12
+    input_dim_nodes = 6
+    input_dim_edges = 6
+    output_dim = 6
+
+    # Create identical MeshEdgeBlocks.
+    torch.manual_seed(42)
+    edge_block_dgl = MeshEdgeBlock(
+        input_dim_nodes=input_dim_nodes,
+        input_dim_edges=input_dim_edges,
+        output_dim=output_dim,
+        hidden_dim=10,
+        hidden_layers=1,
+    ).to(device)
+
+    torch.manual_seed(42)
+    edge_block_pyg = MeshEdgeBlock(
+        input_dim_nodes=input_dim_nodes,
+        input_dim_edges=input_dim_edges,
+        output_dim=output_dim,
+        hidden_dim=10,
+        hidden_layers=1,
+    ).to(device)
+
+    # Create identical input data with gradients.
+    torch.manual_seed(123)
+    node_features_dgl = torch.randn(
+        num_nodes, input_dim_nodes, device=device, requires_grad=True
+    )
+    edge_features_dgl = torch.randn(
+        num_edges, input_dim_edges, device=device, requires_grad=True
+    )
+    edge_index = torch.randint(0, num_nodes, (2, num_edges), device=device)
+
+    node_features_pyg = node_features_dgl.clone().detach().requires_grad_(True)
+    edge_features_pyg = edge_features_dgl.clone().detach().requires_grad_(True)
+
+    # Create graphs.
+    dgl_graph = dgl.graph((edge_index[0], edge_index[1]), num_nodes=num_nodes).to(
+        device
+    )
+    pyg_graph = PyGData(edge_index=edge_index, num_nodes=num_nodes)
+
+    # Forward pass and compute loss.
+    efeat_dgl, nfeat_dgl = edge_block_dgl(
+        edge_features_dgl, node_features_dgl, dgl_graph
+    )
+    loss_dgl = (efeat_dgl.sum() + nfeat_dgl.sum()) / 2
+    loss_dgl.backward()
+
+    efeat_pyg, nfeat_pyg = edge_block_pyg(
+        edge_features_pyg, node_features_pyg, pyg_graph
+    )
+    loss_pyg = (efeat_pyg.sum() + nfeat_pyg.sum()) / 2
+    loss_pyg.backward()
+
+    # Compare gradients.
+    assert_close(
+        node_features_dgl.grad,
+        node_features_pyg.grad,
+    )
+    assert_close(
+        edge_features_dgl.grad,
+        edge_features_pyg.grad,
+    )
+
+    # Compare parameter gradients.
+    for (name_dgl, param_dgl), (name_pyg, param_pyg) in zip(
+        edge_block_dgl.named_parameters(), edge_block_pyg.named_parameters()
+    ):
+        assert (
+            name_dgl == name_pyg
+        ), f"Parameter names should match: {name_dgl} vs {name_pyg}"
+        assert_close(
+            param_dgl.grad,
+            param_pyg.grad,
+        )
+
+
+@import_or_fail(["dgl", "torch_geometric"])
+@pytest.mark.parametrize("device", ["cuda:0", "cpu"])
+@pytest.mark.parametrize("do_concat_trick", [False, True])
+def test_mesh_edge_block_concat_trick_equivalence(
+    device, do_concat_trick, pytestconfig
+):
+    """Test that MeshEdgeBlock produces equivalent outputs with and without concat trick."""
+    # (DGL2PYG): remove this once DGL is removed.
+
+    import dgl
+    from torch_geometric.data import Data as PyGData
+
+    from physicsnemo.models.gnn_layers.mesh_edge_block import MeshEdgeBlock
+
+    # Test parameters.
+    num_nodes = 8
+    num_edges = 15
+    input_dim_nodes = 6
+    input_dim_edges = 6
+    output_dim = 6
+
+    # Create MeshEdgeBlock with concat trick setting.
+    edge_block = MeshEdgeBlock(
+        input_dim_nodes=input_dim_nodes,
+        input_dim_edges=input_dim_edges,
+        output_dim=output_dim,
+        hidden_dim=8,
+        hidden_layers=1,
+        do_concat_trick=do_concat_trick,
+    ).to(device)
+
+    # Create random graph data.
+    torch.manual_seed(42)
+    node_features = torch.randn(num_nodes, input_dim_nodes, device=device)
+    edge_features = torch.randn(num_edges, input_dim_edges, device=device)
+    edge_index = torch.randint(0, num_nodes, (2, num_edges), device=device)
+
+    # Create DGL graph.
+    dgl_graph = dgl.graph((edge_index[0], edge_index[1]), num_nodes=num_nodes)
+    dgl_graph = dgl_graph.to(device)
+
+    # Create PyG graph.
+    pyg_graph = PyGData(edge_index=edge_index, num_nodes=num_nodes)
+
+    # Forward pass through DGL.
+    efeat_dgl, nfeat_dgl = edge_block(edge_features, node_features, dgl_graph)
+
+    # Forward pass through PyG.
+    efeat_pyg, nfeat_pyg = edge_block(edge_features, node_features, pyg_graph)
+
+    # Verify outputs are equivalent.
+    assert_close(efeat_dgl, efeat_pyg)
+    assert_close(nfeat_dgl, nfeat_pyg)
+
+    # Verify output shapes.
+    assert efeat_dgl.shape == (num_edges, output_dim)
+    assert nfeat_dgl.shape == (num_nodes, input_dim_nodes)
+
+
+@import_or_fail(["dgl", "torch_geometric"])
+@pytest.mark.parametrize("device", ["cuda:0", "cpu"])
+def test_mesh_edge_block_batched_equivalence(device, pytestconfig):
+    """Test that MeshEdgeBlock produces equivalent outputs for batched DGL and PyG inputs."""
+    # (DGL2PYG): remove this once DGL is removed.
+
+    import dgl
+    from torch_geometric.data import Batch
+    from torch_geometric.data import Data as PyGData
+
+    from physicsnemo.models.gnn_layers.mesh_edge_block import MeshEdgeBlock
+
+    # Test parameters.
+    batch_size = 2
+    num_nodes_per_graph = 6
+    num_edges_per_graph = 10
+    input_dim_nodes = 5
+    input_dim_edges = 5
+    output_dim = 5
+
+    # Create MeshEdgeBlock.
+    torch.manual_seed(42)
+    edge_block = MeshEdgeBlock(
+        input_dim_nodes=input_dim_nodes,
+        input_dim_edges=input_dim_edges,
+        output_dim=output_dim,
+        hidden_dim=8,
+        hidden_layers=1,
+    ).to(device)
+
+    # Create batched graph data.
+    torch.manual_seed(456)
+    dgl_graphs = []
+    pyg_graphs = []
+    all_node_features = []
+    all_edge_features = []
+
+    for i in range(batch_size):
+        # Create random features.
+        node_features = torch.randn(num_nodes_per_graph, input_dim_nodes, device=device)
+        edge_features = torch.randn(num_edges_per_graph, input_dim_edges, device=device)
+        edge_index = torch.randint(
+            0, num_nodes_per_graph, (2, num_edges_per_graph), device=device
+        )
+
+        all_node_features.append(node_features)
+        all_edge_features.append(edge_features)
+
+        # Create DGL graph.
+        dgl_graph = dgl.graph(
+            (edge_index[0], edge_index[1]), num_nodes=num_nodes_per_graph
+        )
+        dgl_graphs.append(dgl_graph)
+
+        # Create PyG graph.
+        pyg_graph = PyGData(edge_index=edge_index, num_nodes=num_nodes_per_graph)
+        pyg_graphs.append(pyg_graph)
+
+    # Batch graphs.
+    batched_dgl = dgl.batch(dgl_graphs).to(device)
+    batched_pyg = Batch.from_data_list(pyg_graphs)
+
+    # Concatenate features.
+    batched_node_features = torch.cat(all_node_features, dim=0)
+    batched_edge_features = torch.cat(all_edge_features, dim=0)
+
+    # Forward pass.
+    efeat_dgl, nfeat_dgl = edge_block(
+        batched_edge_features, batched_node_features, batched_dgl
+    )
+    efeat_pyg, nfeat_pyg = edge_block(
+        batched_edge_features, batched_node_features, batched_pyg
+    )
+
+    # Verify outputs are equivalent.
+    assert_close(efeat_dgl, efeat_pyg)
+    assert_close(nfeat_dgl, nfeat_pyg)
+
+    # Verify output shapes.
+    expected_num_nodes = batch_size * num_nodes_per_graph
+    expected_num_edges = batch_size * num_edges_per_graph
+    assert efeat_dgl.shape == (expected_num_edges, output_dim)
+    assert nfeat_dgl.shape == (expected_num_nodes, input_dim_nodes)
