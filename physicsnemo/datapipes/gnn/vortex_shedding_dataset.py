@@ -301,7 +301,7 @@ class VortexSheddingDataset(Dataset):
         creates a DGL graph from an adj matrix in COO format.
         torch.int32 can handle graphs with up to 2**31-1 nodes or edges.
         """
-        edges = torch.stack([torch.tensor(src), torch.tensor(dst)], dim=0)
+        edges = torch.stack([torch.tensor(src), torch.tensor(dst)], dim=0).long()
         graph = pyg.data.Data(edge_index=pyg.utils.to_undirected(edges))
         return graph
 
@@ -311,7 +311,7 @@ class VortexSheddingDataset(Dataset):
         adds relative displacement & displacement norm as edge features
         """
         row, col = graph.edge_index
-        disp = torch.tensor(pos[row.long()] - pos[col.long()])
+        disp = torch.tensor(pos[row] - pos[col])
         disp_norm = torch.linalg.norm(disp, dim=-1, keepdim=True)
         graph.edge_attr = torch.cat((disp, disp_norm), dim=1)
         return graph

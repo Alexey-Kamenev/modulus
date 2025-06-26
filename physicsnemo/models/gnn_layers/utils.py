@@ -14,15 +14,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Callable, Dict, Tuple, Union
+from typing import Any, Callable, Dict, Tuple, TypeAlias, Union
 
 import dgl.function as fn
 import torch
+import torch_scatter
 from dgl import DGLGraph
 from torch import Tensor
 from torch.utils.checkpoint import checkpoint
+from torch_geometric.data import Data as PyGData
 
 from physicsnemo.models.gnn_layers import CuGraphCSC
+
+GraphType: TypeAlias = PyGData | DGLGraph | CuGraphCSC
+
 
 try:
     from pylibcugraphops.pytorch.operators import (
@@ -148,10 +153,38 @@ def concat_efeat_dgl(
         return graph.edata["cat_feat"]
 
 
+def concat_efeat_pyg(
+    efeat: Tensor,
+    nfeat: Union[Tensor, Tuple[Tensor, Tensor]],
+    graph: PyGData,
+) -> Tensor:
+    """Concatenates edge features with source and destination node features.
+    Use for PyG graphs.
+
+    Parameters
+    ----------
+    efeat : Tensor
+        Edge features.
+    nfeat : Tensor | Tuple[Tensor]
+        Node features.
+    graph : PyGData
+        Graph.
+
+    Returns
+    -------
+    Tensor
+        Concatenated edge features with source and destination node features.
+    """
+    src_feat, dst_feat = nfeat if isinstance(nfeat, Tuple) else (nfeat, nfeat)
+    src_idx, dst_idx = graph.edge_index.long()
+    cat_feat = torch.cat((efeat, src_feat[src_idx], dst_feat[dst_idx]), dim=1)
+    return cat_feat
+
+
 def concat_efeat(
     efeat: Tensor,
     nfeat: Union[Tensor, Tuple[Tensor]],
-    graph: Union[DGLGraph, CuGraphCSC],
+    graph: GraphType,
 ) -> Tensor:
     """Concatenates edge features with source and destination node features.
     Use for homogeneous graphs.
@@ -162,7 +195,7 @@ def concat_efeat(
         Edge features.
     nfeat : Tensor | Tuple[Tensor]
         Node features.
-    graph : DGLGraph | CuGraphCSC
+    graph : GraphType
         Graph.
 
     Returns
@@ -200,11 +233,13 @@ def concat_efeat(
                         use_source_emb=True,
                         use_target_emb=True,
                     )
-
-        else:
+        elif isinstance(graph, DGLGraph):
             efeat = concat_efeat_dgl(efeat, nfeat, graph)
-
-    else:
+        elif isinstance(graph, PyGData):
+            efeat = concat_efeat_pyg(efeat, nfeat, graph)
+        else:
+            raise ValueError(f"Unsupported graph type: {type(graph)}")
+    elif isinstance(nfeat, Tuple):
         src_feat, dst_feat = nfeat
         # update edge features through concatenating edge and node features
         if isinstance(graph, CuGraphCSC):
@@ -223,8 +258,14 @@ def concat_efeat(
                 efeat = update_efeat_bipartite_e2e(
                     efeat, src_feat, dst_feat, bipartite_graph, "concat"
                 )
-        else:
+        elif isinstance(graph, DGLGraph):
             efeat = concat_efeat_dgl(efeat, (src_feat, dst_feat), graph)
+        elif isinstance(graph, PyGData):
+            efeat = concat_efeat_pyg(efeat, (src_feat, dst_feat), graph)
+        else:
+            raise ValueError(f"Unsupported graph type: {type(graph)}")
+    else:
+        raise ValueError(f"Unsupported node feature type: {type(nfeat)}")
 
     return efeat
 
@@ -260,7 +301,7 @@ def sum_efeat_dgl(
 def sum_efeat(
     efeat: Tensor,
     nfeat: Union[Tensor, Tuple[Tensor]],
-    graph: Union[DGLGraph, CuGraphCSC],
+    graph: GraphType,
 ):
     """Sums edge features with source and destination node features.
 
@@ -271,7 +312,7 @@ def sum_efeat(
     nfeat : Tensor | Tuple[Tensor]
         Node features (static setting) or tuple of node features of
         source and destination nodes (bipartite setting).
-    graph : DGLGraph | CuGraphCSC
+    graph : GraphType
         The underlying graph.
 
     Returns
@@ -378,10 +419,24 @@ def agg_concat_dgl(
         return cat_feat
 
 
+def agg_concat_pyg(
+    efeat: Tensor,
+    nfeat: Tensor,
+    graph: PyGData,
+    aggregation: str,
+) -> Tensor:
+    src, dst = graph.edge_index
+    h_dest = torch_scatter.scatter(
+        efeat, dst, dim=0, dim_size=nfeat.shape[0], reduce=aggregation
+    )
+    cat_feat = torch.cat((h_dest, nfeat), -1)
+    return cat_feat
+
+
 def aggregate_and_concat(
     efeat: Tensor,
     nfeat: Tensor,
-    graph: Union[DGLGraph, CuGraphCSC],
+    graph: GraphType,
     aggregation: str,
 ):
     """
@@ -393,7 +448,7 @@ def aggregate_and_concat(
         Edge features.
     nfeat : Tensor
         Node features (destination nodes).
-    graph : DGLGraph
+    graph : GraphType
         Graph.
     aggregation : str
         Aggregation method (sum or mean).
@@ -421,7 +476,11 @@ def aggregate_and_concat(
         else:
             static_graph = graph.to_static_csc()
             cat_feat = agg_concat_e2n(nfeat, efeat, static_graph, aggregation)
-    else:
+    elif isinstance(graph, DGLGraph):
         cat_feat = agg_concat_dgl(efeat, nfeat, graph, aggregation)
+    elif isinstance(graph, PyGData):
+        cat_feat = agg_concat_pyg(efeat, nfeat, graph, aggregation)
+    else:
+        raise ValueError(f"Unsupported graph type: {type(graph)}")
 
     return cat_feat
