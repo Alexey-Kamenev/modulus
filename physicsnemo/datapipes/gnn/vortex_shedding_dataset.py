@@ -183,7 +183,7 @@ class VortexSheddingDataset(Dataset):
             return graph
         else:
             graph["mesh_pos"] = self.mesh_pos[gidx]
-            cells = self.cells[gidx]
+            cells = torch.tensor(self.cells[gidx])
             rollout_mask = self.rollout_mask[gidx]
             return graph, cells, rollout_mask
 
