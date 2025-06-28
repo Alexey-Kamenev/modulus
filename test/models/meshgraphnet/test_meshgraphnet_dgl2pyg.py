@@ -592,3 +592,271 @@ def test_mesh_edge_block_batched_equivalence(device, pytestconfig):
     expected_num_edges = batch_size * num_edges_per_graph
     assert efeat_dgl.shape == (expected_num_edges, output_dim)
     assert nfeat_dgl.shape == (expected_num_nodes, input_dim_nodes)
+
+
+@import_or_fail(["dgl", "torch_geometric"])
+@pytest.mark.parametrize("device", ["cuda:0", "cpu"])
+def test_meshgraphnet_dgl_pyg_equivalence(device, pytestconfig):
+    """Test that MeshGraphNet produces equivalent outputs for DGL and PyG graphs."""
+    # (DGL2PYG): remove this once DGL is removed.
+
+    import dgl
+    from torch_geometric.data import Data as PyGData
+
+    from physicsnemo.models.meshgraphnet import MeshGraphNet
+
+    # Set seeds for reproducibility.
+    torch.manual_seed(42)
+    dgl.seed(42)
+    np.random.seed(42)
+
+    # Test parameters.
+    num_nodes = 10
+    num_edges = 20
+    input_dim_nodes = 6
+    input_dim_edges = 4
+    output_dim = 3
+
+    # Create MeshGraphNet.
+    model = MeshGraphNet(
+        input_dim_nodes=input_dim_nodes,
+        input_dim_edges=input_dim_edges,
+        output_dim=output_dim,
+        processor_size=2,  # Small for faster testing
+        hidden_dim_processor=16,
+        hidden_dim_node_encoder=16,
+        hidden_dim_edge_encoder=16,
+        hidden_dim_node_decoder=16,
+        num_layers_node_processor=1,
+        num_layers_edge_processor=1,
+        num_layers_node_encoder=1,
+        num_layers_edge_encoder=1,
+        num_layers_node_decoder=1,
+    ).to(device)
+
+    # Create random edge connectivity.
+    src_nodes = torch.randint(0, num_nodes, (num_edges,))
+    dst_nodes = torch.randint(0, num_nodes, (num_edges,))
+
+    # Create node and edge features.
+    node_features = torch.randn(num_nodes, input_dim_nodes, device=device)
+    edge_features = torch.randn(num_edges, input_dim_edges, device=device)
+
+    # Create DGL graph.
+    dgl_graph = dgl.graph((src_nodes, dst_nodes)).to(device)
+
+    # Create PyG graph.
+    edge_index = torch.stack([src_nodes, dst_nodes], dim=0).to(device)
+    pyg_graph = PyGData(edge_index=edge_index)
+
+    # Forward pass with DGL graph.
+    output_dgl = model(node_features, edge_features, dgl_graph)
+
+    # Forward pass with PyG graph.
+    output_pyg = model(node_features, edge_features, pyg_graph)
+
+    # Verify outputs are equivalent.
+    assert_close(output_dgl, output_pyg)
+
+    # Verify output shapes.
+    assert output_dgl.shape == (num_nodes, output_dim)
+    assert output_pyg.shape == (num_nodes, output_dim)
+
+
+@import_or_fail(["dgl", "torch_geometric"])
+@pytest.mark.parametrize("device", ["cuda:0", "cpu"])
+def test_meshgraphnet_gradient_equivalence(device, pytestconfig):
+    """Test that MeshGraphNet produces equivalent gradients for DGL and PyG graphs."""
+    # (DGL2PYG): remove this once DGL is removed.
+
+    import dgl
+    from torch_geometric.data import Data as PyGData
+
+    from physicsnemo.models.meshgraphnet import MeshGraphNet
+
+    # Set seeds for reproducibility.
+    torch.manual_seed(123)
+    dgl.seed(123)
+    np.random.seed(123)
+
+    # Test parameters.
+    num_nodes = 8
+    num_edges = 15
+    input_dim_nodes = 4
+    input_dim_edges = 3
+    output_dim = 2
+
+    # Create identical MeshGraphNets.
+    model_dgl = MeshGraphNet(
+        input_dim_nodes=input_dim_nodes,
+        input_dim_edges=input_dim_edges,
+        output_dim=output_dim,
+        processor_size=2,  # Small for faster testing
+        hidden_dim_processor=8,
+        hidden_dim_node_encoder=8,
+        hidden_dim_edge_encoder=8,
+        hidden_dim_node_decoder=8,
+        num_layers_node_processor=1,
+        num_layers_edge_processor=1,
+        num_layers_node_encoder=1,
+        num_layers_edge_encoder=1,
+        num_layers_node_decoder=1,
+    ).to(device)
+
+    model_pyg = MeshGraphNet(
+        input_dim_nodes=input_dim_nodes,
+        input_dim_edges=input_dim_edges,
+        output_dim=output_dim,
+        processor_size=2,  # Small for faster testing
+        hidden_dim_processor=8,
+        hidden_dim_node_encoder=8,
+        hidden_dim_edge_encoder=8,
+        hidden_dim_node_decoder=8,
+        num_layers_node_processor=1,
+        num_layers_edge_processor=1,
+        num_layers_node_encoder=1,
+        num_layers_edge_encoder=1,
+        num_layers_node_decoder=1,
+    ).to(device)
+
+    # Copy weights to ensure identical models.
+    model_pyg.load_state_dict(model_dgl.state_dict())
+
+    # Create random edge connectivity.
+    src_nodes = torch.randint(0, num_nodes, (num_edges,))
+    dst_nodes = torch.randint(0, num_nodes, (num_edges,))
+
+    # Create node and edge features (requires_grad for gradient test).
+    node_features_dgl = torch.randn(
+        num_nodes, input_dim_nodes, device=device, requires_grad=True
+    )
+    edge_features_dgl = torch.randn(
+        num_edges, input_dim_edges, device=device, requires_grad=True
+    )
+
+    node_features_pyg = node_features_dgl.clone().detach().requires_grad_(True)
+    edge_features_pyg = edge_features_dgl.clone().detach().requires_grad_(True)
+
+    # Create DGL graph.
+    dgl_graph = dgl.graph((src_nodes, dst_nodes)).to(device)
+
+    # Create PyG graph.
+    edge_index = torch.stack([src_nodes, dst_nodes], dim=0).to(device)
+    pyg_graph = PyGData(edge_index=edge_index)
+
+    # Forward pass with DGL graph.
+    output_dgl = model_dgl(node_features_dgl, edge_features_dgl, dgl_graph)
+
+    # Forward pass with PyG graph.
+    output_pyg = model_pyg(node_features_pyg, edge_features_pyg, pyg_graph)
+
+    # Create identical loss functions.
+    loss_dgl = output_dgl.sum()
+    loss_pyg = output_pyg.sum()
+
+    # Backward pass.
+    loss_dgl.backward()
+    loss_pyg.backward()
+
+    # Compare input feature gradients.
+    assert_close(node_features_dgl.grad, node_features_pyg.grad)
+    assert_close(edge_features_dgl.grad, edge_features_pyg.grad)
+
+    # Compare model parameter gradients.
+    for (name_dgl, param_dgl), (name_pyg, param_pyg) in zip(
+        model_dgl.named_parameters(), model_pyg.named_parameters()
+    ):
+        assert name_dgl == name_pyg, f"Parameter names should match: {name_dgl} vs {name_pyg}"
+        assert_close(param_dgl.grad, param_pyg.grad)
+
+
+@import_or_fail(["dgl", "torch_geometric"])
+@pytest.mark.parametrize("device", ["cuda:0", "cpu"])
+def test_meshgraphnet_batched_equivalence(device, pytestconfig):
+    """Test that MeshGraphNet produces equivalent outputs for batched DGL and PyG graphs."""
+    # (DGL2PYG): remove this once DGL is removed.
+
+    import dgl
+    from torch_geometric.data import Batch
+    from torch_geometric.data import Data as PyGData
+
+    from physicsnemo.models.meshgraphnet import MeshGraphNet
+
+    # Set seeds for reproducibility.
+    torch.manual_seed(42)
+    dgl.seed(42)
+    np.random.seed(42)
+
+    # Test parameters.
+    batch_size = 3
+    num_nodes_per_graph = 8
+    num_edges_per_graph = 12
+    input_dim_nodes = 5
+    input_dim_edges = 4
+    output_dim = 3
+
+    # Create MeshGraphNet.
+    model = MeshGraphNet(
+        input_dim_nodes=input_dim_nodes,
+        input_dim_edges=input_dim_edges,
+        output_dim=output_dim,
+        processor_size=2,  # Small for faster testing
+        hidden_dim_processor=16,
+        hidden_dim_node_encoder=16,
+        hidden_dim_edge_encoder=16,
+        hidden_dim_node_decoder=16,
+        num_layers_node_processor=1,
+        num_layers_edge_processor=1,
+        num_layers_node_encoder=1,
+        num_layers_edge_encoder=1,
+        num_layers_node_decoder=1,
+    ).to(device)
+
+    # Create batch of graphs.
+    dgl_graphs = []
+    pyg_graphs = []
+    all_node_features = []
+    all_edge_features = []
+
+    for i in range(batch_size):
+        # Create random edge connectivity.
+        src_nodes = torch.randint(0, num_nodes_per_graph, (num_edges_per_graph,))
+        dst_nodes = torch.randint(0, num_nodes_per_graph, (num_edges_per_graph,))
+
+        # Create node and edge features.
+        node_features = torch.randn(num_nodes_per_graph, input_dim_nodes, device=device)
+        edge_features = torch.randn(num_edges_per_graph, input_dim_edges, device=device)
+
+        all_node_features.append(node_features)
+        all_edge_features.append(edge_features)
+
+        # Create DGL graph.
+        dgl_graph = dgl.graph((src_nodes, dst_nodes))
+        dgl_graphs.append(dgl_graph)
+
+        # Create PyG graph.
+        edge_index = torch.stack([src_nodes, dst_nodes], dim=0)
+        pyg_graph = PyGData(edge_index=edge_index, num_nodes=num_nodes_per_graph)
+        pyg_graphs.append(pyg_graph)
+
+    # Batch graphs.
+    batched_dgl_graph = dgl.batch(dgl_graphs).to(device)
+    batched_pyg_graph = Batch.from_data_list(pyg_graphs).to(device)
+
+    # Concatenate features.
+    batched_node_features = torch.cat(all_node_features, dim=0)
+    batched_edge_features = torch.cat(all_edge_features, dim=0)
+
+    # Forward pass with batched DGL graph.
+    output_dgl = model(batched_node_features, batched_edge_features, batched_dgl_graph)
+
+    # Forward pass with batched PyG graph.
+    output_pyg = model(batched_node_features, batched_edge_features, batched_pyg_graph)
+
+    # Verify outputs are equivalent.
+    assert_close(output_dgl, output_pyg)
+
+    # Verify output shapes.
+    total_nodes = batch_size * num_nodes_per_graph
+    assert output_dgl.shape == (total_nodes, output_dim)
+    assert output_pyg.shape == (total_nodes, output_dim)
