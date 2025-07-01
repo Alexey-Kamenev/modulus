@@ -766,7 +766,9 @@ def test_meshgraphnet_gradient_equivalence(device, pytestconfig):
     for (name_dgl, param_dgl), (name_pyg, param_pyg) in zip(
         model_dgl.named_parameters(), model_pyg.named_parameters()
     ):
-        assert name_dgl == name_pyg, f"Parameter names should match: {name_dgl} vs {name_pyg}"
+        assert (
+            name_dgl == name_pyg
+        ), f"Parameter names should match: {name_dgl} vs {name_pyg}"
         assert_close(param_dgl.grad, param_pyg.grad)
 
 
