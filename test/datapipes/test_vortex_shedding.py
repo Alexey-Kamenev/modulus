@@ -122,7 +122,7 @@ def test_vortex_shedding_dgl_pyg_equivalence(data_dir, split, pytestconfig):
         # Compare graph structure (edge connectivity).
         # Convert DGL graph to PyG format for comparison.
         dgl_src, dgl_dst = dgl_graph.edges()
-        dgl_edge_index = torch.stack([dgl_src, dgl_dst], dim=0)
+        dgl_edge_index = torch.stack([dgl_src, dgl_dst], dim=0).long()
 
         # Sort edges for consistent comparison (both should have same connectivity).
         pyg_sorted_idx = np.lexsort(
