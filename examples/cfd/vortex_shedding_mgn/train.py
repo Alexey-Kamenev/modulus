@@ -66,6 +66,7 @@ class MGNTrainer:
         sampler = DistributedSampler(
             dataset,
             shuffle=True,
+            drop_last=True,
             num_replicas=self.dist.world_size,
             rank=self.dist.rank,
         )
@@ -74,12 +75,8 @@ class MGNTrainer:
         self.dataloader = DataLoader(
             dataset,
             batch_size=cfg.batch_size,
-            shuffle=False,
             sampler=sampler,
-            drop_last=True,
             pin_memory=True,
-            # TODO(akamenev): fix for DDP - add DistributedSampler.
-            # use_ddp=self.dist.world_size > 1,
             num_workers=cfg.num_dataloader_workers,
         )
 
