@@ -271,7 +271,7 @@ def concat_efeat(
 
 
 @torch.jit.script
-def sum_efeat_dgl(
+def sum_edge_node_feat(
     efeat: Tensor, src_feat: Tensor, dst_feat: Tensor, src_idx: Tensor, dst_idx: Tensor
 ) -> Tensor:
     """Sums edge features with source and destination node features.
@@ -328,7 +328,7 @@ def sum_efeat(
                     src_feat = graph.get_src_node_features_in_local_graph(src_feat)
 
                 src, dst = (item.long() for item in graph.to_dgl_graph().edges())
-                sum_efeat = sum_efeat_dgl(efeat, src_feat, dst_feat, src, dst)
+                sum_efeat = sum_edge_node_feat(efeat, src_feat, dst_feat, src, dst)
 
             else:
                 if graph.is_distributed:
@@ -347,11 +347,11 @@ def sum_efeat(
         elif isinstance(graph, DGLGraph):
             src_feat, dst_feat = nfeat, nfeat
             src, dst = (item.long() for item in graph.edges())
-            sum_efeat = sum_efeat_dgl(efeat, src_feat, dst_feat, src, dst)
+            sum_efeat = sum_edge_node_feat(efeat, src_feat, dst_feat, src, dst)
         elif isinstance(graph, PyGData):
             src_feat, dst_feat = nfeat, nfeat
             src, dst = graph.edge_index.long()
-            sum_efeat = sum_efeat_dgl(efeat, src_feat, dst_feat, src, dst)
+            sum_efeat = sum_edge_node_feat(efeat, src_feat, dst_feat, src, dst)
         else:
             raise ValueError(f"Unsupported graph type: {type(graph)}")
     else:
@@ -362,7 +362,7 @@ def sum_efeat(
                     src_feat = graph.get_src_node_features_in_local_graph(src_feat)
 
                 src, dst = (item.long() for item in graph.to_dgl_graph().edges())
-                sum_efeat = sum_efeat_dgl(efeat, src_feat, dst_feat, src, dst)
+                sum_efeat = sum_edge_node_feat(efeat, src_feat, dst_feat, src, dst)
 
             else:
                 if graph.is_distributed:
@@ -374,10 +374,10 @@ def sum_efeat(
                 )
         elif isinstance(graph, DGLGraph):
             src, dst = (item.long() for item in graph.edges())
-            sum_efeat = sum_efeat_dgl(efeat, src_feat, dst_feat, src, dst)
+            sum_efeat = sum_edge_node_feat(efeat, src_feat, dst_feat, src, dst)
         elif isinstance(graph, PyGData):
             src, dst = graph.edge_index.long()
-            sum_efeat = sum_efeat_dgl(efeat, src_feat, dst_feat, src, dst)
+            sum_efeat = sum_edge_node_feat(efeat, src_feat, dst_feat, src, dst)
         else:
             raise ValueError(f"Unsupported graph type: {type(graph)}")
 

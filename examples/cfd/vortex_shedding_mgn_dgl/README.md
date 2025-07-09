@@ -1,5 +1,11 @@
 # MeshGraphNet for transient vortex shedding
 
+> [!Deprecation Notice]
+>
+> Over the next 2-3 releases, DGL-based functionality will be phased out and replaced
+> by equivalent or improved implementations using PyTorch Geometric (PyG).
+> PyG will become the default and only supported graph backend.
+
 This example is a re-implementation of the DeepMind's vortex shedding example
 <https://github.com/deepmind/deepmind-research/tree/master/meshgraphnets> in PyTorch.
 It demonstrates how to train a Graph Neural Network (GNN) for evaluation of the
