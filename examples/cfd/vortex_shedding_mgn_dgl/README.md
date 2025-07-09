@@ -1,6 +1,7 @@
 # MeshGraphNet for transient vortex shedding
 
-> [!Deprecation Notice]
+> [!IMPORTANT]
+> Deprecation Notice
 >
 > Over the next 2-3 releases, DGL-based functionality will be phased out and replaced
 > by equivalent or improved implementations using PyTorch Geometric (PyG).
