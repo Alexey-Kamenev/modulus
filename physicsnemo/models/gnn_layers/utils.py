@@ -14,15 +14,37 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import warnings
+from types import NoneType
 from typing import Any, Callable, Dict, Tuple, TypeAlias, Union
 
-import dgl.function as fn
 import torch
-import torch_scatter
-from dgl import DGLGraph
 from torch import Tensor
 from torch.utils.checkpoint import checkpoint
 from torch_geometric.data import Data as PyGData
+
+try:
+    import dgl  # noqa: F401 for docs
+    import dgl.function as fn
+    from dgl import DGLGraph
+except ImportError:
+    warnings.warn(
+        "Note: This only applies if you're using DGL.\n"
+        "MeshGraphNet (DGL version) requires the DGL library.\n"
+        "Install it with your preferred CUDA version from:\n"
+        "https://www.dgl.ai/pages/start.html\n"
+    )
+
+    DGLGraph: TypeAlias = NoneType
+
+try:
+    import torch_scatter
+except ImportError:
+    warnings.warn(
+        "MeshGraphNet will soon require PyTorch Geometric and torch_scatter.\n"
+        "Install it from here:\n"
+        "https://github.com/rusty1s/pytorch_scatter\n"
+    )
 
 from physicsnemo.models.gnn_layers import CuGraphCSC
 

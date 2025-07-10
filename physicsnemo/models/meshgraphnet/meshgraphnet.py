@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import warnings
 from contextlib import nullcontext
 
 import torch
@@ -22,22 +23,29 @@ from torch import Tensor
 
 try:
     import dgl  # noqa: F401 for docs
+
+    warnings.warn(
+        "DGL version of MeshGraphNet will soon be deprecated. "
+        "Please use PyG version instead.",
+        DeprecationWarning,
+    )
 except ImportError:
-    raise ImportError(
-        "Mesh Graph Net requires the DGL library. Install the "
-        + "desired CUDA version at: \n https://www.dgl.ai/pages/start.html"
+    warnings.warn(
+        "Note: This only applies if you're using DGL.\n"
+        "MeshGraphNet (DGL version) requires the DGL library.\n"
+        "Install it with your preferred CUDA version from:\n"
+        "https://www.dgl.ai/pages/start.html\n"
     )
 
 try:
     import torch_scatter  # noqa: F401
 except ImportError:
-    import warnings
-
     # TODO(akamenev): warning for now to maintain temporary backwards compatibility
     # with DGL version. Replace with ImportError after DGL is removed.
     warnings.warn(
-        "torch_scatter will soon be required for MeshGraphNet. "
-        "Install it from here: https://github.com/rusty1s/pytorch_scatter"
+        "MeshGraphNet will soon require PyTorch Geometric and torch_scatter.\n"
+        "Install it from here:\n"
+        "https://github.com/rusty1s/pytorch_scatter\n"
     )
 
 from dataclasses import dataclass
