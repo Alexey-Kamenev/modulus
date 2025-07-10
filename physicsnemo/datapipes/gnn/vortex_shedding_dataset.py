@@ -298,7 +298,7 @@ class VortexSheddingDataset(Dataset):
     @staticmethod
     def create_graph(src, dst, dtype=torch.int32):
         """
-        creates a DGL graph from an adj matrix in COO format.
+        creates a PyG graph from an adj matrix in COO format.
         torch.int32 can handle graphs with up to 2**31-1 nodes or edges.
         """
         edges = torch.stack([torch.tensor(src), torch.tensor(dst)], dim=0).long()

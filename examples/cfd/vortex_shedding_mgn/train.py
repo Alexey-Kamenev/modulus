@@ -23,7 +23,7 @@ import wandb
 
 from omegaconf import DictConfig
 
-from torch_geometric.loader import DataLoader
+from torch_geometric.loader import DataLoader as PyGDataLoader
 
 from torch.amp import GradScaler, autocast
 from torch.nn.parallel import DistributedDataParallel
@@ -72,7 +72,7 @@ class MGNTrainer:
         )
 
         # instantiate dataloader
-        self.dataloader = DataLoader(
+        self.dataloader = PyGDataLoader(
             dataset,
             batch_size=cfg.batch_size,
             sampler=sampler,

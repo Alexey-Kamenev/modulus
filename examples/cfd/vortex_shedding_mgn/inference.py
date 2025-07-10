@@ -26,7 +26,7 @@ from matplotlib.patches import Rectangle
 import numpy as np
 from omegaconf import DictConfig
 import torch
-from torch_geometric.loader import DataLoader
+from torch_geometric.loader import DataLoader as PyGDataLoader
 
 from physicsnemo.models.meshgraphnet import MeshGraphNet
 from physicsnemo.datapipes.gnn.vortex_shedding_dataset import VortexSheddingDataset
@@ -53,7 +53,7 @@ class MGNRollout:
         )
 
         # instantiate dataloader
-        self.dataloader = DataLoader(
+        self.dataloader = PyGDataLoader(
             self.dataset,
             batch_size=1,  # TODO add support for batch_size > 1
             shuffle=False,
