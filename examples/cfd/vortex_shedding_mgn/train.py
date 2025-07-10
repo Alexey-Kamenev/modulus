@@ -197,12 +197,17 @@ def main(cfg: DictConfig) -> None:
     for epoch in range(trainer.epoch_init, cfg.epochs):
         trainer.dataloader.sampler.set_epoch(epoch)
 
+        epoch_loss = 0.0
+
         for graph in trainer.dataloader:
             loss = trainer.train(graph)
+            epoch_loss += loss.detach().cpu()
+
+        epoch_loss /= len(trainer.dataloader)
         rank_zero_logger.info(
-            f"epoch: {epoch}, loss: {loss:10.3e}, time per epoch: {(time.time()-start):10.3e}"
+            f"epoch: {epoch}, loss: {epoch_loss:10.3e}, time per epoch: {(time.time()-start):10.3e}"
         )
-        wandb.log({"loss": loss.detach().cpu()})
+        wandb.log({"loss": epoch_loss})
 
         # save checkpoint
         if dist.world_size > 1:
