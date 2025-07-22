@@ -23,7 +23,7 @@ It normalizes node data (like coordinates, normals, pressure) and edge data base
 on these statistics before returning the processed graph partitions and a corresponding
 label (extracted from the file name). The code also provides a function create_dataloader
 to create a data loader for efficient batch loading with configurable parameters such as
-batch size, shuffle, and prefetching options.
+batch size, shuffle, and prefetching options. 
 """
 
 import json
@@ -31,9 +31,8 @@ import torch
 from torch.utils.data import Dataset
 import os
 import sys
-from torch_geometric.loader import ClusterData
-from torch.utils.data.distributed import DistributedSampler
-from torch.utils.data.dataloader import DataLoader
+import dgl
+from dgl.dataloading import GraphDataLoader
 
 # Get the absolute path to the parent directory
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -84,36 +83,35 @@ class GraphDataset(Dataset):
         run_id = file_name.split("_")[-1].split(".")[0]  # Extract the run ID
 
         # Load the partitioned graphs from the .bin file
-        graphs = torch.load(file_path, weights_only=False)
+        graphs, _ = dgl.load_graphs(file_path)
 
-        # Normalize node data
-        graphs.data.coordinates = (
-            graphs.data.coordinates - self.coordinates_mean
-        ) / self.coordinates_std
-        graphs.data.normals = (
-            graphs.data.normals - self.normals_mean
-        ) / self.normals_std
-        graphs.data.area = (graphs.data.area - self.area_mean) / self.area_std
-        graphs.data.pressure = (
-            graphs.data.pressure - self.pressure_mean
-        ) / self.pressure_std
-        graphs.data.shear_stress = (
-            graphs.data.shear_stress - self.shear_stress_mean
-        ) / self.shear_stress_std
+        # Process each partition (graph)
+        normalized_partitions = []
+        for graph in graphs:
+            # Normalize node data
+            graph.ndata["coordinates"] = (
+                graph.ndata["coordinates"] - self.coordinates_mean
+            ) / self.coordinates_std
+            graph.ndata["normals"] = (
+                graph.ndata["normals"] - self.normals_mean
+            ) / self.normals_std
+            graph.ndata["area"] = (graph.ndata["area"] - self.area_mean) / self.area_std
+            graph.ndata["pressure"] = (
+                graph.ndata["pressure"] - self.pressure_mean
+            ) / self.pressure_std
+            graph.ndata["shear_stress"] = (
+                graph.ndata["shear_stress"] - self.shear_stress_mean
+            ) / self.shear_stress_std
 
-        # Normalize edge data
-        graphs.data.edge_attr = (
-            graphs.data.edge_attr - self.edge_x_mean
-        ) / self.edge_x_std
+            # Normalize edge data
+            if "x" in graph.edata:
+                graph.edata["x"] = (
+                    graph.edata["x"] - self.edge_x_mean
+                ) / self.edge_x_std
 
-        return graphs, run_id
+            normalized_partitions.append(graph)
 
-    @staticmethod
-    def collate_fn(
-        batch: list[tuple[ClusterData, str]]
-    ) -> tuple[list[ClusterData], list[str]]:
-        graphs, run_ids = zip(*batch)
-        return list(graphs), list(run_ids)
+        return normalized_partitions, run_id
 
 
 def create_dataloader(
@@ -136,49 +134,22 @@ def create_dataloader(
         mean (np.ndarray): Global mean for normalization.
         std (np.ndarray): Global standard deviation for normalization.
         batch_size (int): Number of samples per batch.
-        shuffle (bool): If True, the data will be reshuffled at every epoch.
-        use_ddp (bool): If True, the data loader will use distributed sampling.
-        drop_last (bool): If True, the last batch will be dropped if it is not complete.
         num_workers (int): Number of worker processes for data loading.
         pin_memory (bool): If True, the data loader will copy tensors into CUDA pinned memory.
-        prefetch_factor (int): Number of batches loaded in advance by each worker.
 
     Returns:
         DataLoader: Configured DataLoader for the dataset.
     """
-    if batch_size != 1:
-        raise ValueError(f"Batch size must be 1 for now, but got {batch_size}")
-
     dataset = GraphDataset(file_list, mean, std)
-    if use_ddp:
-        from physicsnemo.distributed import DistributedManager
-
-        dist = DistributedManager()
-        world_size = dist.world_size
-        rank = dist.rank
-    else:
-        world_size = 1
-        rank = 0
-
-    sampler = DistributedSampler(
-        dataset,
-        shuffle=shuffle,
-        drop_last=drop_last,
-        num_replicas=world_size,
-        rank=rank,
-    )
-
-    # instantiate dataloader
-    dataloader = DataLoader(
+    dataloader = GraphDataLoader(
         dataset,
         batch_size=batch_size,
-        sampler=sampler,
+        shuffle=shuffle,
+        drop_last=drop_last,
+        use_ddp=use_ddp,
         pin_memory=pin_memory,
-        num_workers=num_workers,
         prefetch_factor=prefetch_factor,
-        collate_fn=GraphDataset.collate_fn,
     )
-
     return dataloader
 
 
