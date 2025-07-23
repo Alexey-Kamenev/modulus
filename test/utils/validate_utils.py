@@ -20,12 +20,62 @@ from typing import Tuple, Union
 
 import torch
 
-import physicsnemo
-
-from .utils import compare_output
-
 Tensor = torch.Tensor
 logger = logging.getLogger("__name__")
+
+
+def compare_output(
+    output_1: Union[Tensor, Tuple[Tensor, ...]],
+    output_2: Union[Tensor, Tuple[Tensor, ...]],
+    rtol: float = 1e-5,
+    atol: float = 1e-5,
+) -> bool:
+    """Compares model outputs and returns if they are the same
+
+    Parameters
+    ----------
+    output_1 : Union[Tensor, Tuple[Tensor, ...]]
+        Output one
+    output_2 : Union[Tensor, Tuple[Tensor, ...]]
+        Output two
+    rtol : float, optional
+        Relative tolerance of error allowed, by default 1e-5
+    atol : float, optional
+        Absolute tolerance of error allowed, by default 1e-5
+
+    Returns
+    -------
+    bool
+        If outputs are the same
+    """
+    # Output of tensor
+    if isinstance(output_1, Tensor):
+        return torch.allclose(output_1, output_2, rtol, atol)
+    # Output of tuple of tensors
+    elif isinstance(output_1, tuple):
+        # Loop through tuple of outputs
+        for i, (out_1, out_2) in enumerate(zip(output_1, output_2)):
+            # If tensor use allclose
+            if isinstance(out_1, Tensor):
+                if not torch.allclose(out_1, out_2, rtol, atol):
+                    logger.warning(f"Failed comparison between outputs {i}")
+                    logger.warning(
+                        f"Max Difference: {torch.amax(torch.abs(out_1 - out_2))}"
+                    )
+                    logger.warning(f"Difference: {out_1 - out_2}")
+                    return False
+            # Otherwise assume primative
+            else:
+                if not out_1 == out_2:
+                    return False
+    # Unsupported output type
+    else:
+        logger.error(
+            "Model returned invalid type for unit test, should be Tensor or Tuple[Tensor]"
+        )
+        return False
+
+    return True
 
 
 def save_output(output: Union[Tensor, Tuple[Tensor, ...]], file_name: Path):
@@ -66,75 +116,7 @@ def save_output(output: Union[Tensor, Tuple[Tensor, ...]], file_name: Path):
 
 
 @torch.no_grad()
-def validate_forward_accuracy(
-    model: physicsnemo.Module,
-    in_args: Tuple[Tensor] = (),
-    rtol: float = 1e-3,
-    atol: float = 1e-3,
-    file_name: Union[str, None] = None,
-) -> bool:
-    """Validates the accuracy of a model's forward pass with a reference output
-
-    The provided model should likely be initialized using a set seed, otherwise this will
-    likely fail. If the reference output tensor file cannot be found a new one will be
-    create but this test will error. Run the test again to pass it, be sure to commit the
-    output tensor file you have contributed a new model.
-
-    Parameters
-    ----------
-    model : physicsnemo.Module
-        PhysicsNeMo module
-    in_args : Tuple[Tensor], optional
-        Input arguments, by default ()
-    rtol : float, optional
-        Relative tolerance of error allowed, by default 1e-3
-    atol : float, optional
-        Absolute tolerance of error allowed, by default 1e-3
-    file_name : Union[str, None], optional
-        Override the default file name of the stored target output, by default None
-
-    Returns
-    -------
-    bool
-        Test passed
-
-    Raises
-    ------
-    IOError
-        Target output tensor file for this model was not found
-    """
-    # Perform a foward pass of the model
-    output = model.forward(*in_args)
-    # Always use tuples for this comparison / saving
-    if isinstance(output, Tensor):
-        output = (output,)
-
-    # File name / path
-    # Output files should live in test/models/data
-    if file_name is None:
-        file_name = model.meta.name + "_output.pth"
-    file_name = (
-        Path(__file__).parents[1].resolve() / Path("data") / Path(file_name.lower())
-    )
-    # If file does not exist, we will create it then error
-    # Model should then reproduce it on next pytest run
-    if not file_name.exists():
-        save_output(output, file_name)
-        raise IOError(
-            f"Output check file {str(file_name)} wasn't found so one was created. Please re-run the test."
-        )
-    # Load tensor dictionary and check
-    else:
-        tensor_dict = torch.load(str(file_name))
-        output_target = tuple(
-            [value.to(model.device) for value in tensor_dict.values()]
-        )
-
-        return compare_output(output, output_target, rtol, atol)
-
-
-@torch.no_grad()
-def validate_tensor_accuracy(
+def validate_accuracy(
     output: Tensor,
     rtol: float = 1e-3,
     atol: float = 1e-3,
@@ -174,7 +156,7 @@ def validate_tensor_accuracy(
         device = output[0].device
 
     file_name = (
-        Path(__file__).parents[1].resolve() / Path("data") / Path(file_name.lower())
+        Path(__file__).parents[0].resolve() / Path("data") / Path(file_name.lower())
     )
     # If file does not exist, we will create it then error
     # Model should then reproduce it on next pytest run
