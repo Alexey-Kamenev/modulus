@@ -31,7 +31,7 @@ from pytest_utils import import_or_fail
 
 def create_simple_graph():
     """Creates a simple 4x4 grid graph for testing."""
-    #
+    # Graph structure:
     # ┌───┬───┬───┐
     # │   │   │   │
     # ├───┼───┼───┤
@@ -39,6 +39,11 @@ def create_simple_graph():
     # ├───┼───┼───┤
     # │   │   │   │
     # └───┴───┴───┘
+    # Corresponding node ids:
+    #  0  1  2  3
+    #  4  5  6  7
+    #  8  9 10 11
+    # 12 13 14 15
     #
     size = 4
     num_nodes = size * size
@@ -122,15 +127,10 @@ def test_graph_partitioning_comparison(pytestconfig):
     total_dgl_nodes = sum(subgraph.num_nodes() for subgraph in dgl_partitions.values())
     print(f"Total nodes in DGL partitions: {total_dgl_nodes}")
 
+    part_meta = cluster_data.partition
     # Count total nodes across all PyG partitions.
     total_pyg_nodes = sum(
-        len(
-            cluster_data.partition.node_perm[
-                cluster_data.partition.partptr[i] : cluster_data.partition.partptr[
-                    i + 1
-                ]
-            ]
-        )
+        len(part_meta.node_perm[part_meta.partptr[i] : part_meta.partptr[i + 1]])
         for i in range(cluster_data.num_parts)
     )
     print(f"Total nodes in PyG partitions: {total_pyg_nodes}")
@@ -147,11 +147,75 @@ def test_graph_partitioning_comparison(pytestconfig):
 
     # Check that node features and edges are preserved in PyG partitions.
     for i in range(cluster_data.num_parts):
-        start_idx = cluster_data.partition.partptr[i]
-        end_idx = cluster_data.partition.partptr[i + 1]
-        partition_nodes = cluster_data.partition.node_perm[start_idx:end_idx]
+        start_idx = part_meta.partptr[i]
+        end_idx = part_meta.partptr[i + 1]
+        partition_nodes = part_meta.node_perm[start_idx:end_idx]
         assert pyg_data.coordinates[partition_nodes].shape == (4, 2)
         assert pyg_data.x[partition_nodes].shape == (4, 5)
         # ClusterData provides a way access sub-graph data.
         subgraph = cluster_data[i]
         assert (subgraph.x == pyg_data.x[partition_nodes]).all()
+
+import sys
+sys.path.append("/data/src/modulus/src/modulus")
+from examples.cfd.external_aerodynamics.xaeronet.surface.dataloader import PartitionedGraph
+
+
+@import_or_fail(["dgl", "torch_geometric", "pyg_lib"])
+def test_graph_partitioning_comparison_with_halo(pytestconfig):
+    """Compares DGL metis_partition with PyG ClusterData partitioning.
+
+    Halo regions are used in this test.
+    """
+
+    halo_size = 1
+    torch.manual_seed(42)
+
+    # Create a simple test graph.
+    edge_index, node_coords, node_features, edge_features = create_simple_graph()
+    num_nodes = node_coords.size(0)
+    num_partitions = 4
+
+    # Create DGL graph.
+    dgl_graph = dgl.graph((edge_index[0], edge_index[1]), num_nodes=num_nodes)
+    dgl_graph.ndata["coordinates"] = node_coords
+    dgl_graph.ndata["features"] = node_features
+    dgl_graph.edata["features"] = edge_features
+
+    # Create PyG data.
+    pyg_data = pyg.data.Data(
+        edge_index=edge_index,
+        coordinates=node_coords,
+        x=node_features,
+        edge_attr=edge_features,
+    )
+
+    # Test DGL partitioning.
+    dgl_partitions = dgl.metis_partition(
+        dgl_graph, k=num_partitions, extra_cached_hops=halo_size, reshuffle=True
+    )
+
+    # Test PyG partitioning.
+    partitioned_graph = PartitionedGraph(pyg_data, num_partitions, halo_size)
+    for i, partition in enumerate(partitioned_graph.partitions):
+        print(f"Partition {i} has {partition.num_nodes} nodes")
+        print(f"Partition {i} has {partition.edge_index.shape[1]} edges")
+        print(f"Partition {i} has {partition.inner_node.shape[0]} inner nodes")
+
+    # cluster_data = pyg.loader.ClusterData(pyg_data, num_parts=num_partitions)
+    # part_meta = cluster_data.partition
+
+    # # Compare basic properties.
+    # print(f"DGL created {len(dgl_partitions)} partitions")
+    # print(f"PyG created {cluster_data.num_parts} partitions")
+
+    # # Create partitions with halo regions.
+    # for part_idx in range(cluster_data.num_parts):
+    #     part_inner_node_ids = part_meta.node_perm[part_meta.partptr[part_idx] : part_meta.partptr[part_idx + 1]]
+    #     part_node_ids_with_halo, edge_index, mapping, edge_mask = pyg.utils.k_hop_subgraph(
+    #         part_inner_node_ids,
+    #         num_hops=halo_size,
+    #         edge_index=pyg_data.edge_index,
+    #         num_nodes=pyg_data.num_nodes,
+    #         relabel_nodes=True,
+    #     )

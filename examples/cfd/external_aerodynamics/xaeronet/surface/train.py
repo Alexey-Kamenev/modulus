@@ -201,8 +201,8 @@ def main(cfg: DictConfig) -> None:
                         ),
                         dim=1,
                     )
-                    pred = model(ndata, part.edge_attr, part)
-                    target = torch.cat((part.pressure, part.shear_stress), dim=1)
+                    pred = model(ndata, part.edge_attr, part)[part.inner_node]
+                    target = torch.cat((part.pressure, part.shear_stress), dim=1)[part.inner_node]
                     loss = torch.mean((pred - target) ** 2) / cfg.num_partitions
                     total_loss += loss.item()
                 scaler.scale(loss).backward()
@@ -252,7 +252,7 @@ def main(cfg: DictConfig) -> None:
                 valid_id = valid_id[0]
 
                 # Placeholder to accumulate predictions and node features for the full graph's nodes
-                num_nodes = valid_graph_partitions.data.num_nodes
+                num_nodes = valid_graph_partitions.num_nodes
 
                 # Initialize accumulators for predictions and node features
                 pressure_pred = torch.zeros(
@@ -276,7 +276,7 @@ def main(cfg: DictConfig) -> None:
                 area = torch.zeros((num_nodes, 1), dtype=torch.float32, device=device)
 
                 # Accumulate predictions and node features from all partitions
-                for part_id, part in enumerate(valid_graph_partitions):
+                for part in valid_graph_partitions:
                     part = part.to(device)
 
                     # Get node features (coordinates and normals)
@@ -296,21 +296,16 @@ def main(cfg: DictConfig) -> None:
 
                     with torch.no_grad():
                         with torch.autocast(amp_device, enabled=True, dtype=amp_dtype):
-                            pred = model(ndata, part.edge_attr, part)
+                            pred = model(ndata, part.edge_attr, part)[part.inner_node]
                             target = torch.cat(
                                 (part.pressure, part.shear_stress),
                                 dim=1,
-                            )
+                            )[part.inner_node]
                             loss = torch.mean((pred - target) ** 2) / cfg.num_partitions
                             valid_loss += loss.item()
 
                             # Store the predictions based on the original node IDs
-                            part_meta = valid_graph_partitions.partition
-                            part_start_idx = part_meta.partptr[part_id]
-                            part_end_idx = part_meta.partptr[part_id + 1]
-                            original_nodes = part_meta.node_perm[
-                                part_start_idx:part_end_idx
-                            ]
+                            original_nodes = part.part_node[part.inner_node]
 
                             # Accumulate the predictions
                             pressure_pred[original_nodes] = pred[:, :1].clone().float()
@@ -329,9 +324,9 @@ def main(cfg: DictConfig) -> None:
                             # Accumulate the node features
                             coordinates[
                                 original_nodes
-                            ] = part.coordinates.clone().float()
-                            normals[original_nodes] = part.normals.clone().float()
-                            area[original_nodes] = part.area.clone().float()
+                            ] = part.coordinates[part.inner_node].clone().float()
+                            normals[original_nodes] = part.normals[part.inner_node].clone().float()
+                            area[original_nodes] = part.area[part.inner_node].clone().float()
 
                 # Denormalize predictions and node features using the global stats
                 pressure_pred_denorm = (

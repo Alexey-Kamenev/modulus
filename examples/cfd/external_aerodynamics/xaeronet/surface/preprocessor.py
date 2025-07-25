@@ -45,6 +45,8 @@ from omegaconf import DictConfig
 from physicsnemo.datapipes.cae.readers import read_vtp
 from physicsnemo.sym.geometry.tessellation import Tessellation
 
+from dataloader import PartitionedGraph
+
 
 def convert_to_triangular_mesh(
     polydata, write=False, output_filename="surface_mesh_triangular.vtu"
@@ -124,7 +126,7 @@ def process_partition(graph, num_partitions, halo_hops):
     Helper function to partition a single graph and include node and edge features.
     """
     # Perform the partitioning
-    return pyg.loader.ClusterData(graph, num_parts=num_partitions)
+    return PartitionedGraph(graph, num_partitions, halo_hops)
 
 
 def process_run(
