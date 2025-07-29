@@ -107,8 +107,6 @@ def main(cfg: DictConfig) -> None:
         use_ddp=True,
         num_workers=0,
     )
-    # train_graphs is a list of graphs, each graph is a PyG ClusterData object
-    train_graphs = [graph_partitions for graph_partitions, _ in train_dataloader]
 
     if dist.rank == 0:
         validation_dataloader = create_dataloader(
@@ -120,14 +118,9 @@ def main(cfg: DictConfig) -> None:
             use_ddp=False,
             num_workers=0,
         )
-        # valid_graphs is a list of graphs, each graph is a PyG ClusterData object
-        valid_graphs = [
-            (graph_partitions, graph_id)
-            for graph_partitions, graph_id in validation_dataloader
-        ]
 
-        print(f"Training dataset size: {len(train_graphs) * dist.world_size}")
-        print(f"Validation dataset size: {len(valid_graphs)}")
+        print(f"Training dataset size: {len(train_dataloader) * dist.world_size}")
+        print(f"Validation dataset size: {len(validation_dataloader)}")
 
     ######################################
     # Training #
@@ -179,7 +172,7 @@ def main(cfg: DictConfig) -> None:
     for epoch in range(start_epoch, cfg.num_epochs):
         model.train()
         total_loss = 0
-        for graph_partitions in train_graphs:
+        for graph_partitions, _ in train_dataloader:
             optimizer.zero_grad()
             # Iterate over the partitions of the graph
             # TODO(akamenev): only batch size 1 is supported for now
@@ -202,7 +195,9 @@ def main(cfg: DictConfig) -> None:
                         dim=1,
                     )
                     pred = model(ndata, part.edge_attr, part)[part.inner_node]
-                    target = torch.cat((part.pressure, part.shear_stress), dim=1)[part.inner_node]
+                    target = torch.cat((part.pressure, part.shear_stress), dim=1)[
+                        part.inner_node
+                    ]
                     loss = torch.mean((pred - target) ** 2) / cfg.num_partitions
                     total_loss += loss.item()
                 scaler.scale(loss).backward()
@@ -215,7 +210,7 @@ def main(cfg: DictConfig) -> None:
         # Log the training loss
         if dist.rank == 0:
             current_lr = optimizer.param_groups[0]["lr"]
-            num_mini_batches = len(train_graphs)
+            num_mini_batches = len(train_dataloader)
             print(
                 f"Epoch {epoch + 1}, "
                 f"Learning Rate: {current_lr}, "
@@ -246,7 +241,7 @@ def main(cfg: DictConfig) -> None:
         if dist.rank == 0 and epoch % cfg.validation_freq == 0:
             valid_loss = 0
 
-            for valid_graph_partitions, valid_id in valid_graphs:
+            for valid_graph_partitions, valid_id in validation_dataloader:
                 # TODO(akamenev): only batch size 1 is supported for now
                 valid_graph_partitions = valid_graph_partitions[0]
                 valid_id = valid_id[0]
@@ -322,11 +317,15 @@ def main(cfg: DictConfig) -> None:
                             )
 
                             # Accumulate the node features
-                            coordinates[
-                                original_nodes
-                            ] = part.coordinates[part.inner_node].clone().float()
-                            normals[original_nodes] = part.normals[part.inner_node].clone().float()
-                            area[original_nodes] = part.area[part.inner_node].clone().float()
+                            coordinates[original_nodes] = (
+                                part.coordinates[part.inner_node].clone().float()
+                            )
+                            normals[original_nodes] = (
+                                part.normals[part.inner_node].clone().float()
+                            )
+                            area[original_nodes] = (
+                                part.area[part.inner_node].clone().float()
+                            )
 
                 # Denormalize predictions and node features using the global stats
                 pressure_pred_denorm = (
@@ -365,7 +364,7 @@ def main(cfg: DictConfig) -> None:
                 # Save the point cloud
                 point_cloud.save(f"point_cloud_{valid_id}.vtp")
 
-            num_valid_mini_batches = len(valid_graphs)
+            num_valid_mini_batches = len(validation_dataloader)
             print(
                 f"Epoch {epoch+1}, Validation Error: {valid_loss / num_valid_mini_batches}"
             )
