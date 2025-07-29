@@ -156,10 +156,6 @@ def test_graph_partitioning_comparison(pytestconfig):
         subgraph = cluster_data[i]
         assert (subgraph.x == pyg_data.x[partition_nodes]).all()
 
-import sys
-sys.path.append("/data/src/modulus/src/modulus")
-from examples.cfd.external_aerodynamics.xaeronet.surface.dataloader import PartitionedGraph
-
 
 @import_or_fail(["dgl", "torch_geometric", "pyg_lib"])
 def test_graph_partitioning_comparison_with_halo(pytestconfig):
@@ -196,26 +192,38 @@ def test_graph_partitioning_comparison_with_halo(pytestconfig):
     )
 
     # Test PyG partitioning.
-    partitioned_graph = PartitionedGraph(pyg_data, num_partitions, halo_size)
-    for i, partition in enumerate(partitioned_graph.partitions):
-        print(f"Partition {i} has {partition.num_nodes} nodes")
-        print(f"Partition {i} has {partition.edge_index.shape[1]} edges")
-        print(f"Partition {i} has {partition.inner_node.shape[0]} inner nodes")
+    cluster_data = pyg.loader.ClusterData(pyg_data, num_parts=num_partitions)
+    part_meta = cluster_data.partition
 
-    # cluster_data = pyg.loader.ClusterData(pyg_data, num_parts=num_partitions)
-    # part_meta = cluster_data.partition
+    # Compare basic properties.
+    print(f"DGL created {len(dgl_partitions)} partitions")
+    print(f"PyG created {cluster_data.num_parts} partitions")
 
-    # # Compare basic properties.
-    # print(f"DGL created {len(dgl_partitions)} partitions")
-    # print(f"PyG created {cluster_data.num_parts} partitions")
-
-    # # Create partitions with halo regions.
-    # for part_idx in range(cluster_data.num_parts):
-    #     part_inner_node_ids = part_meta.node_perm[part_meta.partptr[part_idx] : part_meta.partptr[part_idx + 1]]
-    #     part_node_ids_with_halo, edge_index, mapping, edge_mask = pyg.utils.k_hop_subgraph(
-    #         part_inner_node_ids,
-    #         num_hops=halo_size,
-    #         edge_index=pyg_data.edge_index,
-    #         num_nodes=pyg_data.num_nodes,
-    #         relabel_nodes=True,
-    #     )
+    # Create partitions with halo regions.
+    for part_idx in range(cluster_data.num_parts):
+        part_inner_node_ids = part_meta.node_perm[
+            part_meta.partptr[part_idx] : part_meta.partptr[part_idx + 1]
+        ]
+        part_node_ids_with_halo, edge_index, mapping, edge_mask = (
+            pyg.utils.k_hop_subgraph(
+                part_inner_node_ids,
+                num_hops=halo_size,
+                edge_index=pyg_data.edge_index,
+                num_nodes=pyg_data.num_nodes,
+                relabel_nodes=True,
+            )
+        )
+        # Check partition 0 for specific values.
+        # The partition itself consists of nodes 2, 3, 6, 7 (see create_simple_graph).
+        # The halo region consists of nodes 1, 5, 10, 11.
+        # The edge_index is the edge_index of the subgraph, which includes the halo region.
+        # The mapping is the mapping of the nodes in the partition to the nodes in the subgraph.
+        # The edge_mask is the mask of the edges in the subgraph.
+        if part_idx == 0:
+            assert (part_inner_node_ids == torch.tensor([2, 3, 6, 7])).all()
+            assert (
+                part_node_ids_with_halo == torch.tensor([1, 2, 3, 5, 6, 7, 10, 11])
+            ).all()
+            assert edge_index.shape == (2, 28)
+            assert (mapping == torch.tensor([1, 2, 4, 5])).all()
+            assert edge_mask.sum() == 28
