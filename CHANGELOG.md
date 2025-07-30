@@ -80,7 +80,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Existing DGL-based XAeroNet example has been renamed to `xaeronet_dgl`.
   Added new `xaeronet` example that uses PyTorch Geometric instead.
 
-
 ### Deprecated
 
 ### Removed
