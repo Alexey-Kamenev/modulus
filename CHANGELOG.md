@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `physicsnemo.experimental` module; it might also be subjected to API changes
   without notice.
 - Bumped Ruff version from 0.0.290 to 0.12.5. Replaced Black with `ruff-format`.
+- Domino improvements with Unet attention module and user configs
 
 ### Changed
 
@@ -74,8 +75,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   overrides `++training.hp.P_mean=<P_mean_value>` and
   `++training.hp.P_std=<P_std_value>` for training (and similar ones with
   `training.hp` replaced by `generation` for generation).
+- Diffusion utils: patch-based inference and lead time support with
+  deterministic sampler.
 - Existing DGL-based XAeroNet example has been renamed to `xaeronet_dgl`.
   Added new `xaeronet` example that uses PyTorch Geometric instead.
+
 
 ### Deprecated
 
