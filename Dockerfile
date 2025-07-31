@@ -132,8 +132,6 @@ RUN if [ "$TARGETPLATFORM" = "linux/amd64" ]; then \
         echo "Skipping onnxruntime_gpu install."; \
     fi
 
-RUN pip install --no-cache-dir "torch_geometric==2.6.1"
-
 # cleanup of stage
 RUN rm -rf /physicsnemo/
 
