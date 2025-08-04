@@ -17,6 +17,8 @@
 import logging
 import time
 
+from dgl.dataloading import GraphDataLoader
+
 import hydra
 from hydra.utils import instantiate, to_absolute_path
 from omegaconf import DictConfig, OmegaConf
@@ -24,9 +26,6 @@ from omegaconf import DictConfig, OmegaConf
 import torch
 from torch.cuda.amp import GradScaler, autocast
 from torch.nn.parallel import DistributedDataParallel
-from torch.utils.data.distributed import DistributedSampler
-
-from torch_geometric.loader import DataLoader as PyGDataLoader
 
 from physicsnemo.distributed.manager import DistributedManager
 from physicsnemo.launch.utils import load_checkpoint, save_checkpoint
@@ -65,20 +64,10 @@ class MGNTrainer:
         logger.info(f"Using {len(self.dataset)} training samples.")
 
         # instantiate dataloader
-        sampler = DistributedSampler(
+        self.dataloader = GraphDataLoader(
             self.dataset,
-            shuffle=cfg.train.dataloader.shuffle,
-            drop_last=cfg.train.dataloader.drop_last,
-            num_replicas=self.dist.world_size,
-            rank=self.dist.rank,
-        )
-
-        self.dataloader = PyGDataLoader(
-            self.dataset,
-            batch_size=cfg.train.dataloader.batch_size,
-            sampler=sampler,
-            pin_memory=cfg.train.dataloader.pin_memory,
-            num_workers=cfg.train.dataloader.num_workers,
+            **cfg.train.dataloader,
+            use_ddp=self.dist.world_size > 1,
         )
 
         # instantiate the model
