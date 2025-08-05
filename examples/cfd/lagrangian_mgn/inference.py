@@ -29,8 +29,6 @@ import matplotlib
 from matplotlib import animation
 from matplotlib import pyplot as plt
 
-matplotlib.use("TkAgg")  # for plotting
-
 import numpy as np
 
 from omegaconf import DictConfig, OmegaConf
