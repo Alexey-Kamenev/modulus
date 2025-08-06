@@ -38,7 +38,7 @@ from omegaconf import DictConfig, OmegaConf
 import torch
 from torch import Tensor
 
-from physicsnemo.datapipes.gnn.lagrangian_dataset import graph_update
+from physicsnemo.datapipes.gnn.lagrangian_dataset_dgl import graph_update
 from physicsnemo.launch.utils import load_checkpoint
 
 from loggers import get_gpu_info, init_python_logging
