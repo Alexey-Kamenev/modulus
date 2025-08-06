@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Functionality in DoMINO to take arbitrary number of `scalar` or `vector`
   global parameters and encode them using `class ParameterModel`
 - TopoDiff model and example.
+- Added ability for DoMINO model to return volume neighbors.
+- Added functionality in DoMINO recipe to introduce physics residual losses.
 - Diffusion models, metrics, and utils: implementation of Student-t
   distribution for EDM-based diffusion models (t-EDM). This feature is adapted
   from the paper [Heavy-Tailed Diffusion Models, Pandey et al.](https://arxiv.org/abs/2410.14171>).
@@ -27,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without notice.
 - Bumped Ruff version from 0.0.290 to 0.12.5. Replaced Black with `ruff-format`.
 - Domino improvements with Unet attention module and user configs
+- Hybrid MeshGraphNet for modeling structural deformation
+- Enabled TransformerEngine backend in the `transolver` model.
 
 ### Changed
 
@@ -79,7 +83,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deterministic sampler.
 - Existing DGL-based XAeroNet example has been renamed to `xaeronet_dgl`.
   Added new `xaeronet` example that uses PyTorch Geometric instead.
-
+- Updated the deforming plate example to use the Hybrid MeshGraphNet model.
+- :warning: **BC-breaking:** Refactored the `transolver` model to improve
+  readability and performance, and extend to more use cases.
+  
 ### Deprecated
 
 ### Removed
@@ -96,6 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixed an inadvertent change to the deterministic sampler 2nd order correction
 - Bug Fix in Domino model ball query layer
+- Fixed bug models/unet/unet.py: setting num_conv_layers=1 gives errors
 
 ## [1.1.0] - 2025-06-05
 
