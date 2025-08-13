@@ -253,7 +253,7 @@ def main(cfg: DictConfig) -> None:
         start = time.time()
         # Wrap the dataloader with tqdm and add description with epoch info
         progress_bar = tqdm(
-            trainer.dataloader, desc=f"Epoch {epoch+1}/{cfg.epochs}", leave=False
+            trainer.dataloader, desc=f"Epoch {epoch + 1}/{cfg.epochs}", leave=False
         )
 
         for item in progress_bar:
@@ -268,7 +268,7 @@ def main(cfg: DictConfig) -> None:
             torch.cuda.empty_cache()
 
         rank_zero_logger.info(
-            f"epoch: {epoch+1}, loss: {loss:10.3e}, time per epoch: {(time.time()-start):10.3e}"
+            f"epoch: {epoch + 1}, loss: {loss:10.3e}, time per epoch: {(time.time() - start):10.3e}"
         )
         if dist.rank == 0:
             trainer.writer.add_scalar("loss", loss.detach().cpu().item(), epoch)

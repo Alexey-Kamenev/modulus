@@ -74,7 +74,8 @@ def main(cfg: DictConfig):
                 }
             )
         torch.save(sample_data, sample_file)
-    print(f"Rank {dist.rank} finished processing samples {start} to {end-1}")
+    print(f"Rank {dist.rank} finished processing samples {start} to {end - 1}")
+
 
 
 if __name__ == "__main__":
