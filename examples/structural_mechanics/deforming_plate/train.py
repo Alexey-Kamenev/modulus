@@ -218,9 +218,7 @@ class MGNTrainer:
     def forward(self, graph, mesh_edge_features, world_edge_features):
         # forward pass
         with autocast("cuda", enabled=self.amp):
-            pred = self.model(
-                graph.x, mesh_edge_features, world_edge_features, graph
-            )
+            pred = self.model(graph.x, mesh_edge_features, world_edge_features, graph)
             loss = self.criterion(pred, graph.y)
             return loss
 

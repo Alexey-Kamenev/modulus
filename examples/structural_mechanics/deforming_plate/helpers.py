@@ -54,7 +54,9 @@ def add_world_edges(graph, world_edge_radius=0.03, edge_stats_path="edge_stats.j
     # Exclude existing edges
     candidate_edges = set(
         (int(src), int(dst))
-        for src, dst in zip(filtered_edge_index[0].tolist(), filtered_edge_index[1].tolist())
+        for src, dst in zip(
+            filtered_edge_index[0].tolist(), filtered_edge_index[1].tolist()
+        )
     )
     world_edges = torch.tensor(
         [list(edge) for edge in candidate_edges if edge not in mesh_edges],
@@ -78,7 +80,7 @@ def add_world_edges(graph, world_edge_radius=0.03, edge_stats_path="edge_stats.j
     world_edge_features = (world_edge_features - edge_mean) / edge_std
 
     # Concatenate the new features to the existing ones and assign
-    #world_edge_features = torch.tensor(world_edge_features, dtype=mesh_edge_features.dtype, device=mesh_edge_features.device)
+    # world_edge_features = torch.tensor(world_edge_features, dtype=mesh_edge_features.dtype, device=mesh_edge_features.device)
 
     # Compute the mesh edge features based on world pos
     row, col = graph.edge_index
@@ -94,7 +96,7 @@ def add_world_edges(graph, world_edge_radius=0.03, edge_stats_path="edge_stats.j
     # Add new edges to the graph
     graph.edge_index = torch.cat([graph.edge_index, world_edges], dim=1)
 
-    all_edge_features = torch.cat([mesh_edge_features, world_edge_features], dim=0)  
+    all_edge_features = torch.cat([mesh_edge_features, world_edge_features], dim=0)
     graph.edge_attr = all_edge_features
 
     return graph, mesh_edge_features, world_edge_features

@@ -77,6 +77,5 @@ def main(cfg: DictConfig):
     print(f"Rank {dist.rank} finished processing samples {start} to {end - 1}")
 
 
-
 if __name__ == "__main__":
     main()

@@ -117,7 +117,6 @@ class MGNRollout:
 
     @torch.inference_mode()
     def predict(self):
-
         self.pred, self.exact, self.faces, self.graphs = [], [], [], []
         stats = {
             key: value.to(self.device) for key, value in self.dataset.node_stats.items()
@@ -145,7 +144,7 @@ class MGNRollout:
 
             # inference step
             if i % (self.num_test_time_steps - 1) != 0:
-                graph.ndata["world_pos"] = self.pred[i-1][:, 0:3]
+                graph.ndata["world_pos"] = self.pred[i - 1][:, 0:3]
             graph, mesh_edge_features, world_edge_features = add_world_edges(graph)
             pred_i = self.model(
                 graph.ndata["x"], mesh_edge_features, world_edge_features, graph
@@ -157,7 +156,7 @@ class MGNRollout:
                 stats["velocity_mean"],
                 stats["velocity_std"],
             )
-            
+
             # do not update the "wall_boundary" & "outflow" nodes
             moving_points_mask = torch.cat(
                 (moving_points_mask, moving_points_mask, moving_points_mask), dim=-1
