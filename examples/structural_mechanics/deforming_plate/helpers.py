@@ -73,9 +73,9 @@ def add_world_edges(graph, world_edge_radius=0.03, edge_stats_path="edge_stats.j
         )
 
     # Compute edge features for new edges
-    world_src, world_dst = world_edges[0], world_edges[1]
+    world_src, world_dst = world_edges
     world_disp = world_pos[world_src] - world_pos[world_dst]
-    world_disp_norm = torch.norm(world_disp, dim=-1, keepdim=True)
+    world_disp_norm = torch.linalg.norm(world_disp, dim=-1, keepdim=True)
     world_edge_features = torch.cat([world_disp, world_disp_norm], dim=1)
     world_edge_features = (world_edge_features - edge_mean) / edge_std
 
@@ -84,7 +84,7 @@ def add_world_edges(graph, world_edge_radius=0.03, edge_stats_path="edge_stats.j
 
     # Compute the mesh edge features based on world pos
     row, col = graph.edge_index
-    disp = torch.tensor(world_pos[row] - world_pos[col])
+    disp = world_pos[row] - world_pos[col]
     disp_norm = torch.linalg.norm(disp, dim=-1, keepdim=True)
     mesh_edges_world_pos = torch.cat((disp, disp_norm), dim=1)
     mesh_edges_world_pos = (mesh_edges_world_pos - edge_mean) / edge_std

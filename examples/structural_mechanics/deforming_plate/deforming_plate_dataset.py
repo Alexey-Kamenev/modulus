@@ -202,7 +202,7 @@ class DeformingPlateDataset(Dataset):
             return graph
         else:
             graph.mesh_pos = self.mesh_pos[gidx]
-            cells = self.cells[gidx]
+            cells = torch.as_tensor(self.cells[gidx])
             moving_points_mask = self.moving_points_mask[gidx]
             object_points_mask = self.object_points_mask[gidx]
             clamped_points_mask = self.clamped_points_mask[gidx]
