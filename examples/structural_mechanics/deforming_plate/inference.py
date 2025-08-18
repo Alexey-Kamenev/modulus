@@ -136,9 +136,7 @@ class MGNRollout:
                 stats["velocity_mean"],
                 stats["velocity_std"],
             )
-            exact_next_world_pos = (
-                exact_velocity_denormalized + graph.world_pos[:, 0:3]
-            )
+            exact_next_world_pos = exact_velocity_denormalized + graph.world_pos[:, 0:3]
 
             # inference step
             if i % (self.num_test_time_steps - 1) != 0:
