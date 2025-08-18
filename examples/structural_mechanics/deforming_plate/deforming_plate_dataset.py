@@ -294,7 +294,9 @@ class DeformingPlateDataset(Dataset):
         torch.int32 can handle graphs with up to 2**31-1 nodes or edges.
         """
         edges = torch.stack([torch.tensor(src), torch.tensor(dst)], dim=0).long()
-        graph = pyg.data.Data(edge_index=pyg.utils.to_undirected(edges))
+        edges = pyg.utils.to_undirected(edges)
+        edges = pyg.utils.coalesce(edges)
+        graph = pyg.data.Data(edge_index=edges)
         return graph
 
     @staticmethod
