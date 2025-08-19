@@ -14,17 +14,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import time
 
 import hydra
 import torch
 import wandb
-from dgl.dataloading import GraphDataLoader
 from hydra.utils import to_absolute_path
 from omegaconf import DictConfig
-from torch.cuda.amp import GradScaler, autocast
+from torch.amp import GradScaler, autocast
 from torch.nn.parallel import DistributedDataParallel
+from torch.utils.data.distributed import DistributedSampler
+from torch_geometric.loader import DataLoader as PyGDataLoader
 
 try:
     import apex
@@ -66,24 +66,30 @@ class MGNTrainer:
             num_samples=cfg.num_validation_samples,
         )
 
+        # create distributed samplers
+        train_sampler = DistributedSampler(
+            dataset,
+            shuffle=True,
+            drop_last=True,
+            num_replicas=self.dist.world_size,
+            rank=self.dist.rank,
+        )
+
         # instantiate dataloader
-        self.dataloader = GraphDataLoader(
+        self.dataloader = PyGDataLoader(
             dataset,
             batch_size=cfg.batch_size,
-            shuffle=False,
-            drop_last=True,
+            sampler=train_sampler,
             pin_memory=True,
-            use_ddp=dist.world_size > 1,
         )
 
         # instantiate validation dataloader
-        self.validation_dataloader = GraphDataLoader(
+        self.validation_dataloader = PyGDataLoader(
             validation_dataset,
             batch_size=cfg.batch_size,
             shuffle=False,
             drop_last=True,
             pin_memory=True,
-            use_ddp=False,
         )
 
         # instantiate the model
@@ -150,9 +156,9 @@ class MGNTrainer:
 
     def forward(self, graph):
         # forward pass
-        with autocast(enabled=self.amp):
-            pred = self.model(graph.ndata["x"], graph.edata["x"], graph)
-            loss = self.criterion(pred, graph.ndata["y"])
+        with autocast(device_type=self.dist.device.type, enabled=self.amp):
+            pred = self.model(graph.x, graph.edge_attr, graph)
+            loss = self.criterion(pred, graph.y)
             return loss
 
     def backward(self, loss):
@@ -178,11 +184,11 @@ class MGNTrainer:
 
         for graph in self.validation_dataloader:
             graph = graph.to(self.dist.device)
-            pred = self.model(graph.ndata["x"], graph.edata["x"], graph)
+            pred = self.model(graph.x, graph.edge_attr, graph)
 
             for index, key in enumerate(error_keys):
                 pred_val = pred[:, index : index + 1]
-                target_val = graph.ndata["y"][:, index : index + 1]
+                target_val = graph.y[:, index : index + 1]
                 errors[key] += relative_lp_error(pred_val, target_val)
 
         for key in error_keys:
@@ -222,10 +228,11 @@ def main(cfg: DictConfig) -> None:
     rank_zero_logger.info("Training started...")
 
     for epoch in range(trainer.epoch_init, cfg.epochs):
+        trainer.dataloader.sampler.set_epoch(epoch)
         loss_agg = 0
         for graph in trainer.dataloader:
             loss = trainer.train(graph)
-            loss_agg += loss.detach().cpu().numpy()
+            loss_agg += loss.item()
         loss_agg /= len(trainer.dataloader)
         rank_zero_logger.info(
             f"epoch: {epoch}, loss: {loss_agg:10.3e}, lr: {trainer.get_lr()}, time per epoch: {(time.time() - start):10.3e}"

@@ -19,7 +19,7 @@ hydra:
     chdir: True
   run:
     dir: ./outputs/
-  
+
 ckpt_path: "./checkpoints"
 ckpt_name: "./stokes.pt"
 data_dir: "./dataset"

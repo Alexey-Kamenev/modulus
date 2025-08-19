@@ -14,11 +14,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import dgl
 import numpy as np
 import torch
 import vtk
 from torch import Tensor
+from torch_geometric.data import Data
 
 try:
     import pyvista as pv
@@ -88,7 +88,7 @@ def get_dataset(path, return_graph=False):
     nu = 0.01
 
     if return_graph:
-        # generate DGL graph
+        # generate PyG graph
         polys = pv_mesh.GetPolys()
         polys.InitTraversal()
         edge_list = []
