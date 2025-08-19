@@ -296,6 +296,9 @@ class DeformingPlateDataset(Dataset):
         edges = torch.stack([torch.tensor(src), torch.tensor(dst)], dim=0).long()
         edges = pyg.utils.to_undirected(edges)
         edges = pyg.utils.coalesce(edges)
+        # See https://pytorch-geometric.readthedocs.io/en/latest/modules/utils.html#torch_geometric.utils.coalesce
+        if isinstance(edges, tuple):
+            edges = edges[0]
         graph = pyg.data.Data(edge_index=edges)
         return graph
 
