@@ -20,7 +20,7 @@ import hydra
 import numpy as np
 import torch
 from hydra.utils import to_absolute_path
-from physicsnemo.datapipes.gnn.stokes_dataset import StokesDataset
+from physicsnemo.datapipes.gnn.stokes_dataset_dgl import StokesDataset
 from physicsnemo.launch.logging import PythonLogger
 from physicsnemo.launch.utils import load_checkpoint
 from physicsnemo.models.meshgraphnet import MeshGraphNet

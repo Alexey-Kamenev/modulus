@@ -140,7 +140,7 @@ class StokesDataset(Dataset):
         for i in range(len(self.graphs)):
             pos = self.graphs[i].pos
             row, col = self.graphs[i].edge_index
-            disp = torch.tensor(pos[row.long()] - pos[col.long()])
+            disp = pos[row] - pos[col]
             disp_norm = torch.linalg.norm(disp, dim=-1, keepdim=True)
             self.graphs[i].edge_attr = torch.cat((disp, disp_norm), dim=-1)
 
@@ -276,7 +276,7 @@ class StokesDataset(Dataset):
                 )
 
         # Create PyG graph using the connectivity information
-        edges = torch.tensor(edge_list, dtype=torch.int64)
+        edges = torch.tensor(edge_list, dtype=torch.int64).t()
         if to_bidirected:
             edges = pyg.utils.to_undirected(edges)
         if add_self_loop:

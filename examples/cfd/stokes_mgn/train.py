@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 import time
 
 import hydra
@@ -130,9 +131,21 @@ class MGNTrainer:
             rank_zero_logger.info("Using FusedAdam optimizer")
         except:
             self.optimizer = torch.optim.Adam(self.model.parameters(), lr=cfg.lr)
-        self.scheduler = torch.optim.lr_scheduler.LambdaLR(
-            self.optimizer, lr_lambda=lambda epoch: cfg.lr_decay_rate**epoch
+        # If lr_decay_rate is not set, calculate it based on the number of epochs
+        # and the final learning rate multiplier.
+        lr_decay_rate = cfg.lr_decay_rate
+        if lr_decay_rate is None:
+            # StepLR is used to decay the learning rate every epoch
+            # (note the scheduler is called every _iteration_, not every epoch)
+            # with the final learning rate being 1% of the initial learning rate.
+            final_lr_multiplier = 0.01
+            lr_decay_rate = math.pow(final_lr_multiplier, 1.0 / cfg.epochs)
+        self.scheduler = torch.optim.lr_scheduler.StepLR(
+            self.optimizer,
+            step_size=len(self.dataloader),
+            gamma=lr_decay_rate,
         )
+
         self.scaler = GradScaler()
 
         # load checkpoint

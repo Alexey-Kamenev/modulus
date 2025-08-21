@@ -135,7 +135,9 @@ class PhysicsInformedFineTuner:
         self.connectivity_tensor = compute_connectivity_tensor(
             dgl_graph.nodes(), edge_tensor
         )
-        self.connectivity_tensor = self.connectivity_tensor.to(self.device)
+        self.connectivity_tensor = tuple(
+            t.to(self.device) for t in self.connectivity_tensor
+        )
 
         self.ref_u = torch.tensor(ref_u).float().to(self.device)
         self.ref_v = torch.tensor(ref_v).float().to(self.device)
