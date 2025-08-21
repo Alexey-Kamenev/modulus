@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add a device aware kNN method to physicsnemo.utils.neighbors. Works with CPU or GPU
   by dispatching to the proper optimized library, and torch.compile compatible.
 
+### Changed
+
+- Migrated Stokes MGN example to PyTorch Geometric.
+
 ## [1.2.0a0] - 2025-08-XX
 
 ### Added
