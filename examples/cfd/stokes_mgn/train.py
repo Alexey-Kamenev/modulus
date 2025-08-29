@@ -246,7 +246,7 @@ def main(cfg: DictConfig) -> None:
         loss_agg = 0
         for graph in trainer.dataloader:
             loss = trainer.train(graph)
-            loss_agg += loss.item()
+            loss_agg += loss.detach().item()
         loss_agg /= len(trainer.dataloader)
         rank_zero_logger.info(
             f"epoch: {epoch}, loss: {loss_agg:10.3e}, lr: {trainer.get_lr()}, time per epoch: {(time.time() - start):10.3e}"

@@ -200,7 +200,7 @@ class PhysicsInformedFineTuner:
 
         # inflow points
         mask_inflow = (
-            self.pyg_graph.marker == torch.tensor([0, 1, 0, 0, 0]).to(self.device)
+            self.pyg_graph.marker == torch.tensor([0, 1, 0, 0, 0], device=self.device)
         ).all(dim=1)
         results_inflow = {
             k: out[:, i : i + 1][mask_inflow] for i, k in enumerate(["u", "v", "p"])
@@ -209,10 +209,10 @@ class PhysicsInformedFineTuner:
 
         # no-slip points
         mask_1 = (
-            self.pyg_graph.marker == torch.tensor([0, 0, 0, 1, 0]).to(self.device)
+            self.pyg_graph.marker == torch.tensor([0, 0, 0, 1, 0], device=self.device)
         ).all(dim=1)
         mask_2 = (
-            self.pyg_graph.marker == torch.tensor([0, 0, 0, 0, 1]).to(self.device)
+            self.pyg_graph.marker == torch.tensor([0, 0, 0, 0, 1], device=self.device)
         ).all(dim=1)
         mask_noslip = torch.logical_or(mask_1, mask_2)
         results_noslip = {
@@ -222,7 +222,7 @@ class PhysicsInformedFineTuner:
 
         # interior points
         mask_int = (
-            self.pyg_graph.marker == torch.tensor([1, 0, 0, 0, 0]).to(self.device)
+            self.pyg_graph.marker == torch.tensor([1, 0, 0, 0, 0], device=self.device)
         ).all(dim=1)
         model_out = {
             k: out[:, i : i + 1][mask_int] for i, k in enumerate(["u", "v", "p"])
