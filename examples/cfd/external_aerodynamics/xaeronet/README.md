@@ -73,6 +73,18 @@ automatic workflows that represent the industrial state-of-the-art. Geometries a
 aerodynamic data are published in open-source formats. For more technical details about this
 dataset, please refer to their [paper](https://arxiv.org/pdf/2408.11969).
 
+## XAeroNet-S prerequisites
+
+Install the requirements using:
+
+```bash
+pip install -r requirements.txt
+pip install pyg-lib -f https://data.pyg.org/whl/torch-2.8.0+cu129.html
+```
+
+See `pyg-lib` [installation instructions](https://github.com/pyg-team/pyg-lib?tab=readme-ov-file#installation)
+for more details.
+
 ## Training the XAeroNet-S model
 
 To train the XAeroNet-S model, follow these steps:
@@ -104,6 +116,14 @@ To train the XAeroNet-S model, follow these steps:
    and visualize in Paraview.
 
 ![XAeroNet-S Validation results for the sample #500.](../../../../docs/img/xaeronet_s_results.png)
+
+## XAeroNet-V prerequisites
+
+Install the requirements using:
+
+```bash
+pip install -r requirements.txt
+```
 
 ## Training the XAeroNet-V model
 
