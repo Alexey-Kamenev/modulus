@@ -160,7 +160,7 @@ def test_graphcast_net_gradient_equivalence(
             assert_close(param_dgl.grad, param_pyg.grad, rtol=1e-4, atol=1e-5)
 
 
-@import_or_fail(["dgl", "torch_geometric"])
+@import_or_fail(["dgl", "torch_geometric", "torch_sparse"])
 @pytest.mark.parametrize("device", ["cuda:0"])
 @pytest.mark.parametrize("processor_type", ["MessagePassing", "GraphTransformer"])
 @torch.no_grad()
