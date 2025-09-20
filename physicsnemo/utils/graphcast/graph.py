@@ -141,12 +141,6 @@ class Graph:
             mask = ~self.backend.khop_adj_all_k(
                 graph=mesh_graph, kmax=self.khop_neighbors
             )
-            # if self.backend.name == "dgl":
-            #     khop_adj_bool = self.khop_adj_all_k(g=mesh_graph, kmax=self.khop_neighbors)
-            #     mask = ~khop_adj_bool
-            # elif self.backend.name == "pyg":
-            #     # TODO(akamenev): implement khop_adj_all_k for PyG
-            #     mask = None
         else:
             mask = None
         if verbose:
