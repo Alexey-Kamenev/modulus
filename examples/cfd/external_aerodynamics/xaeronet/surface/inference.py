@@ -256,15 +256,11 @@ def main(cfg: DictConfig) -> None:
                     )
 
         # Denormalize predictions and node features using the global stats
-        pressure_pred_denorm = (
-            pressure_pred * torch.tensor(std["pressure"])
-        ) + torch.tensor(mean["pressure"])
-        shear_stress_pred_denorm = (
-            shear_stress_pred * torch.tensor(std["shear_stress"])
-        ) + torch.tensor(mean["shear_stress"])
-        coordinates_denorm = (
-            coordinates * torch.tensor(std["coordinates"])
-        ) + torch.tensor(mean["coordinates"])
+        pressure_pred_denorm = (pressure_pred * std["pressure"]) + mean["pressure"]
+        shear_stress_pred_denorm = (shear_stress_pred * std["shear_stress"]) + mean[
+            "shear_stress"
+        ]
+        coordinates_denorm = (coordinates * std["coordinates"]) + mean["coordinates"]
 
         surface_mesh, surface_vertices = surface_data[test_id]
         # Interpolate onto the original simulation mesh
