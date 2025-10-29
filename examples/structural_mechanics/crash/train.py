@@ -20,10 +20,11 @@ import time
 import logging
 
 sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, ".")
 
 import hydra
 from hydra.utils import instantiate
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 import torch
 from torch.amp import GradScaler, autocast
@@ -60,6 +61,11 @@ class Trainer:
                 f"but you selected {datapipe_name}."
             )
         if "Transolver" in model_name and "PointCloudDataset" not in datapipe_name:
+            raise ValueError(
+                f"Model {model_name} requires a point-cloud datapipe, "
+                f"but you selected {datapipe_name}."
+            )
+        if "FIGConvUNet" in model_name and "PointCloudDataset" not in datapipe_name:
             raise ValueError(
                 f"Model {model_name} requires a point-cloud datapipe, "
                 f"but you selected {datapipe_name}."
@@ -195,6 +201,22 @@ class Trainer:
             self.optimizer.step()
 
 
+def _init_hydra_resolvers():
+    """Register custom Hydra resolvers for FIGConvUNet config."""
+    try:
+        from physicsnemo.models.figconvnet.geometries import GridFeaturesMemoryFormat
+
+        def res_mem_pair(
+            fmt: str, dims: list
+        ) -> tuple:
+            return getattr(GridFeaturesMemoryFormat, fmt), tuple(dims)
+
+        OmegaConf.register_new_resolver("res_mem_pair", res_mem_pair, replace=True)
+    except ImportError:
+        # FIGConvUNet not available, skip resolver
+        pass
+
+
 @hydra.main(version_base="1.3", config_path="conf", config_name="config")
 def main(cfg: DictConfig) -> None:
     DistributedManager.initialize()
@@ -255,4 +277,5 @@ def main(cfg: DictConfig) -> None:
 
 
 if __name__ == "__main__":
+    _init_hydra_resolvers()
     main()
